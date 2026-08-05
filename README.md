@@ -161,6 +161,8 @@ Without a container's isolated filesystem, make sure `/opt/charger/data`
 and `/var/log/charger` (or whatever paths your config points at) exist
 and are writable, or point the config at local paths instead.
 
+For easy starting some sample systemd files are in the systemd directory.
+
 ## Further reading
 
 Each component has an in-depth manual covering its full configuration
