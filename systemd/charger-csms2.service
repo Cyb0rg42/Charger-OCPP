@@ -1,0 +1,18 @@
+[Unit]
+Description=Charge System Management System 2
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/karl/source/Charger/CSMS
+ExecStart=/usr/bin/python3 /home/karl/source/Charger/CSMS/csms.py --config /opt/charger/etc/csms2.config.yaml
+Restart=on-failure
+RestartSec=5
+User=karl
+Group=lovink
+
+StandardOutput=file:/var/log/charger/csms2.stdout
+StandardError=file:/var/log/charger/csms2.stderr
+
+[Install]
+WantedBy=multi-user.target

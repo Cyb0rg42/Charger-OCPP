@@ -1,0 +1,18 @@
+[Unit]
+Description=Charge Point Proxy
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=//home/karl/source/Charger/OCPPProxy
+ExecStart=/usr/bin/python3 //home/karl/source/Charger/OCPPProxy/ocppproxy.py --config /opt/charger/etc/ocppproxy01.config.yaml
+Restart=on-failure
+RestartSec=5
+User=karl
+Group=lovink
+
+StandardOutput=file:/var/log/charger/ocppproxy01.stdout
+StandardError=file:/var/log/charger/ocppproxy01.stderr
+
+[Install]
+WantedBy=multi-user.target

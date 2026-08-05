@@ -1,0 +1,18 @@
+[Unit]
+Description=Charge Point Simulator 2
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=//home/karl/source/Charger/ChargePoint
+ExecStart=/usr/bin/python3 //home/karl/source/Charger/ChargePoint/chargepoint.py --config /opt/charger/etc/chargepoint2.json
+Restart=on-failure
+RestartSec=5
+User=karl
+Group=lovink
+
+StandardOutput=file:/var/log/charger/chargepoint2.stdout
+StandardError=file:/var/log/charger/chargepoint2.stderr
+
+[Install]
+WantedBy=multi-user.target
