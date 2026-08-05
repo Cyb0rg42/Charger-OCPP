@@ -1,4 +1,4 @@
-# Charging-OCPP 
+# Charging-OCPP
 
 A small suite of cooperating services built around OCPP 1.6-J electric-vehicle
 charging infrastructure: a Central System (CSMS), a charge-point simulator,
