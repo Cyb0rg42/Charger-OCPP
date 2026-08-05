@@ -455,6 +455,37 @@ body {
     color: var(--text-primary);
 }
 
+/* ================= PAGINATION (Previous / Next) ================= */
+.btn-page-prev,
+.btn-page-next {
+    color: white;
+    border: none;
+}
+
+.btn-page-prev {
+    background-color: var(--accent-orange);
+}
+
+.btn-page-prev:hover:not(:disabled) {
+    background-color: #d97e0a;
+    color: white;
+}
+
+.btn-page-next {
+    background-color: var(--accent-green);
+}
+
+.btn-page-next:hover:not(:disabled) {
+    background-color: #34c95f;
+    color: white;
+}
+
+.btn-page-prev:disabled,
+.btn-page-next:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* ================= TABLE ================= */
 .table-container {
     background-color: var(--bg-secondary);

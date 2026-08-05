@@ -4,9 +4,9 @@
 <h2 class="section-title">Event Log</h2>
 
 <!-- Filters Row -->
-<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center;">
+<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
   <!-- Left side: Filters -->
-  <div style="display: flex; gap: 12px; flex: 1;">
+  <div style="display: flex; gap: 12px; flex: 1; min-width: 360px; flex-wrap: wrap; align-items: center;">
     <input type="text" id="ev-search" placeholder="Search events..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; flex: 0.5; min-width: 200px;">
     <select id="severity-filter" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; min-width: 140px;">
       <option value="DEBUG">DEBUG (All)</option>
@@ -19,6 +19,18 @@
     </select>
     <button class="btn btn-primary" id="btn-refresh-events" style="white-space: nowrap;">Refresh</button>
     <button class="btn btn-outline-secondary" id="btn-clear" style="white-space: nowrap; border: 1px solid var(--border-color);">Clear</button>
+  </div>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <label for="events-per-page" style="margin-bottom:0; font-size:13px;">Per page:</label>
+    <select id="events-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+      <option value="15" selected>15</option>
+      <option value="30">30</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <button class="btn btn-page-prev btn-sm" id="events-prev">Previous</button>
+    <button class="btn btn-page-next btn-sm" id="events-next">Next</button>
+    <span id="events-info" class="text-muted" style="font-size:13px;">Loading...</span>
   </div>
 </div>
 
@@ -83,15 +95,33 @@ function loadOcppCommands() {
   });
 }
 
+var logEventLimit = 15;
+var logEventOffset = 0;
+var logEventTotal = 0;
+
+function updateEventInfo() {
+  var start = logEventTotal === 0 ? 0 : logEventOffset + 1;
+  var end = Math.min(logEventOffset + logEventLimit, logEventTotal);
+  $("#events-info").text(start + " - " + end + " of " + logEventTotal);
+  $("#events-prev").prop("disabled", logEventOffset === 0);
+  $("#events-next").prop("disabled", logEventOffset + logEventLimit >= logEventTotal);
+}
+
 function loadEvents(query, ocppCommand, severity) {
   let url = "/api/events";
-  const params = [];
+  const params = [
+    "limit=" + logEventLimit,
+    "offset=" + logEventOffset,
+  ];
   if (query) params.push("q=" + encodeURIComponent(query));
   if (ocppCommand) params.push("ocpp_command=" + encodeURIComponent(ocppCommand));
   if (severity) params.push("severity=" + encodeURIComponent(severity));
   if (params.length > 0) url += "?" + params.join("&");
   
-  $.getJSON(url, function(evts) {
+  $.getJSON(url, function(result) {
+    const evts = result.events || [];
+    logEventTotal = result.total || 0;
+    updateEventInfo();
     const tb = $("#ev-body"); tb.empty();
     if (evts.length === 0) { $("#no-events").show(); return; }
     $("#no-events").hide();
@@ -132,22 +162,42 @@ function showPayload(ev) {
 }
 
 $("#btn-refresh-events").click(function(){ 
+  logEventOffset = 0;
   loadEvents($("#ev-search").val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim()); 
 });
 $("#ev-search").on("keypress", function(e){ 
-  if(e.which===13) loadEvents($(this).val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim()); 
+  if(e.which===13) { logEventOffset = 0; loadEvents($(this).val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim()); }
 });
 $("#ocpp-filter").change(function(){ 
+  logEventOffset = 0;
   loadEvents($("#ev-search").val().trim(), $(this).val().trim(), $("#severity-filter").val().trim()); 
 });
 $("#severity-filter").change(function(){ 
+  logEventOffset = 0;
   loadEvents($("#ev-search").val().trim(), $("#ocpp-filter").val().trim(), $(this).val().trim()); 
 });
 $("#btn-clear").click(function(){ 
   $("#ev-search").val(""); 
   $("#ocpp-filter").val("");
   $("#severity-filter").val("DEBUG");
+  logEventOffset = 0;
   loadEvents("", "", "DEBUG"); 
+});
+
+$("#events-prev").click(function() {
+  if (logEventOffset <= 0) return;
+  logEventOffset = Math.max(0, logEventOffset - logEventLimit);
+  loadEvents($("#ev-search").val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim());
+});
+$("#events-next").click(function() {
+  if (logEventOffset + logEventLimit >= logEventTotal) return;
+  logEventOffset += logEventLimit;
+  loadEvents($("#ev-search").val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim());
+});
+$("#events-per-page").change(function() {
+  logEventLimit = parseInt($(this).val(), 10) || 15;
+  logEventOffset = 0;
+  loadEvents($("#ev-search").val().trim(), $("#ocpp-filter").val().trim(), $("#severity-filter").val().trim());
 });
 
 loadOcppCommands();

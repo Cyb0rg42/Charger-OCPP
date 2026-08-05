@@ -997,13 +997,30 @@ def stop_active_transaction_for_cp(cp_id: str, reason: str = "EVSuspended") -> O
     return txn_id
 
 
-def get_transactions(cp_id: Optional[str] = None) -> List[dict]:
+def get_transactions(cp_id: Optional[str] = None, limit: Optional[int] = None, offset: int = 0) -> List[dict]:
     conn = _get_conn()
+    sql = "SELECT * FROM transactions"
+    params = []
     if cp_id:
-        rows = conn.execute("SELECT * FROM transactions WHERE cp_id = ? ORDER BY id DESC", (cp_id,)).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM transactions ORDER BY id DESC").fetchall()
+        sql += " WHERE cp_id = ?"
+        params.append(cp_id)
+    sql += " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+    rows = conn.execute(sql, params).fetchall()
     return _normalize_transaction_rows(conn, rows)
+
+
+def get_transactions_count(cp_id: Optional[str] = None) -> int:
+    conn = _get_conn()
+    sql = "SELECT COUNT(*) as cnt FROM transactions"
+    params = []
+    if cp_id:
+        sql += " WHERE cp_id = ?"
+        params.append(cp_id)
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else 0
 
 
 def get_transaction(transaction_id: int) -> Optional[dict]:
@@ -1213,6 +1230,7 @@ def get_events(
     ocpp_command: Optional[str] = None,
     severity_min: Optional[str] = None,
     limit: int = 200,
+    offset: int = 0,
 ) -> List[dict]:
     conn = _get_conn()
     sql = "SELECT * FROM event_log"
@@ -1245,10 +1263,53 @@ def get_events(
             params.append(min_rank)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY id DESC LIMIT ?"
-    params.append(limit)
+    sql += " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
     rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_events_count(
+    cp_id: Optional[str] = None,
+    query: Optional[str] = None,
+    ocpp_command: Optional[str] = None,
+    severity_min: Optional[str] = None,
+) -> int:
+    conn = _get_conn()
+    sql = "SELECT COUNT(*) as cnt FROM event_log"
+    params = []
+    clauses = []
+    if cp_id:
+        clauses.append("cp_id = ?"); params.append(cp_id)
+    if query:
+        clauses.append("(message LIKE ? OR severity LIKE ?)"); params.extend([f"%{query}%", f"%{query}%"])
+    if ocpp_command:
+        clauses.append("ocpp_command = ?"); params.append(ocpp_command)
+    sev = (severity_min or "").strip().upper()
+    if sev and sev != "DEBUG":
+        sev_rank = {
+            "DEBUG": 0,
+            "INFO": 1,
+            "WARNING": 2,
+            "ERROR": 3,
+        }
+        min_rank = sev_rank.get(sev)
+        if min_rank is not None:
+            clauses.append(
+                "(CASE UPPER(severity) "
+                "WHEN 'DEBUG' THEN 0 "
+                "WHEN 'INFO' THEN 1 "
+                "WHEN 'WARNING' THEN 2 "
+                "WHEN 'ERROR' THEN 3 "
+                "ELSE 0 END) >= ?"
+            )
+            params.append(min_rank)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else 0
 
 
 def get_status_notifications(cp_id: str, connector_id: int, start_ts: str, end_ts: str) -> List[dict]:
@@ -1598,13 +1659,30 @@ def delete_car(car_id: int):
 
 # ── Smart Schedule helpers ──────────────────────────────────────
 
-def get_smart_schedules(cp_id: str = None) -> List[dict]:
+def get_smart_schedules(cp_id: str = None, limit: Optional[int] = None, offset: int = 0) -> List[dict]:
     conn = _get_conn()
+    sql = "SELECT * FROM smart_schedules"
+    params = []
     if cp_id:
-        rows = conn.execute("SELECT * FROM smart_schedules WHERE cp_id = ? ORDER BY start_at", (cp_id,)).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM smart_schedules ORDER BY start_at").fetchall()
+        sql += " WHERE cp_id = ?"
+        params.append(cp_id)
+    sql += " ORDER BY start_at DESC"
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+    rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_smart_schedules_count(cp_id: str = None) -> int:
+    conn = _get_conn()
+    sql = "SELECT COUNT(*) as cnt FROM smart_schedules"
+    params = []
+    if cp_id:
+        sql += " WHERE cp_id = ?"
+        params.append(cp_id)
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else 0
 
 
 def get_smart_schedule(schedule_id: int) -> Optional[dict]:
@@ -1644,10 +1722,14 @@ def delete_smart_schedule(schedule_id: int):
     conn.commit()
 
 
-def get_active_smart_schedules() -> List[dict]:
+def get_active_smart_schedules(cp_id: str = None) -> List[dict]:
     """Return schedules that are scheduled or started (not completed/cancelled)."""
     conn = _get_conn()
-    rows = conn.execute(
-        "SELECT * FROM smart_schedules WHERE status IN ('scheduled', 'started') ORDER BY start_at"
-    ).fetchall()
+    sql = "SELECT * FROM smart_schedules WHERE status IN ('scheduled', 'started')"
+    params = []
+    if cp_id:
+        sql += " AND cp_id = ?"
+        params.append(cp_id)
+    sql += " ORDER BY start_at"
+    rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]

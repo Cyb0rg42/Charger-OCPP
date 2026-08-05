@@ -16,6 +16,18 @@
   <!-- Right side: Export -->
   <button class="btn btn-secondary" id="btn-export-events" style="white-space: nowrap; border: 1px solid var(--border-color);">Export CSV</button>
 </div>
+<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 20px;">
+  <label for="events-per-page" style="margin-bottom:0; font-size:13px;">Per page:</label>
+  <select id="events-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+    <option value="5">5</option>
+    <option value="10" selected>10</option>
+    <option value="50">50</option>
+    <option value="100">100</option>
+  </select>
+  <button class="btn btn-page-prev btn-sm" id="events-prev">Previous</button>
+  <button class="btn btn-page-next btn-sm" id="events-next">Next</button>
+  <span id="events-info" class="text-muted" style="font-size:13px;">Loading...</span>
+</div>
 
 <!-- Transactions Table -->
 <div class="table-container">
@@ -114,21 +126,38 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+var eventsPageLimit = 10;
+var eventsPageOffset = 0;
+var eventsPageTotal = 0;
+
+function updateEventsInfo() {
+  var start = eventsPageTotal === 0 ? 0 : eventsPageOffset + 1;
+  var end = Math.min(eventsPageOffset + eventsPageLimit, eventsPageTotal);
+  $('#events-info').text(start + ' - ' + end + ' of ' + eventsPageTotal);
+  $('#events-prev').prop('disabled', eventsPageOffset === 0);
+  $('#events-next').prop('disabled', eventsPageOffset + eventsPageLimit >= eventsPageTotal);
+}
+
 function refreshEvents() {
   var start = $('#events-start').val();
   var end = $('#events-end').val();
   var filter = $('#events-filter').val().trim().toLowerCase();
-  var query = '';
-  if (start) query += 'start=' + encodeURIComponent(start);
-  if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
-  $.getJSON('/api/charging-events?' + query, function(events) {
+  var query = [];
+  if (start) query.push('start=' + encodeURIComponent(start));
+  if (end) query.push('end=' + encodeURIComponent(end));
+  query.push('limit=' + eventsPageLimit);
+  query.push('offset=' + eventsPageOffset);
+  $.getJSON('/api/charging-events?' + query.join('&'), function(result) {
+    var events = result.events || [];
+    eventsPageTotal = result.total || 0;
     if (filter) {
       events = events.filter(function(e) {
         return ('' + e.cp_id).toLowerCase().includes(filter) ||
                ('' + e.id).includes(filter) ||
-               ('' + e.id_tag).toLowerCase().includes(filter);
+               ('' + (e.id_tag || '')).toLowerCase().includes(filter);
       });
     }
+    updateEventsInfo();
     renderEvents(events);
   });
 }
@@ -139,7 +168,8 @@ function exportEvents() {
   var query = '';
   if (start) query += 'start=' + encodeURIComponent(start);
   if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
-  $.getJSON('/api/charging-events?' + query, function(events) {
+  $.getJSON('/api/charging-events?' + query, function(result) {
+    var events = result.events || [];
     var csv = 'Txn ID,Charge Point,Connector,Assigned,Start,Stop,Cable Connected,Session Duration,Energy (Wh),Reason,Model,Vendor,Serial,Firmware Version,Meter Type\n';
     events.forEach(function(e) {
       var wh = (e.meter_stop != null && e.meter_start != null) ? (e.meter_stop - e.meter_start) : null;
@@ -172,8 +202,29 @@ function exportEvents() {
   });
 }
 
-$('#btn-refresh-events').click(refreshEvents);
+$('#btn-refresh-events').click(function() {
+  eventsPageOffset = 0;
+  refreshEvents();
+});
 $('#btn-export-events').click(exportEvents);
+
+$('#events-prev').click(function() {
+  if (eventsPageOffset <= 0) return;
+  eventsPageOffset = Math.max(0, eventsPageOffset - eventsPageLimit);
+  refreshEvents();
+});
+
+$('#events-next').click(function() {
+  if (eventsPageOffset + eventsPageLimit >= eventsPageTotal) return;
+  eventsPageOffset += eventsPageLimit;
+  refreshEvents();
+});
+
+$('#events-per-page').change(function() {
+  eventsPageLimit = parseInt($(this).val(), 10) || 10;
+  eventsPageOffset = 0;
+  refreshEvents();
+});
 
 $(document).on('change', '.car-select', function() {
   var txnId = $(this).data('txn-id');

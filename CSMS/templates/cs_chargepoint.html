@@ -146,7 +146,21 @@
 
 <!-- Smart Charge Schedule -->
 <div class="card mb-3 border-primary" id="smart-schedule-card" style="display:none;">
-  <div class="card-header bg-primary text-white">⚡ Smart Charge Schedule</div>
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap" style="gap:8px;">
+    <span>⚡ Smart Charge Schedule</span>
+    <div class="d-flex align-items-center" style="gap:8px;">
+      <label for="smart-schedule-per-page" class="mb-0" style="font-size:13px;">Per page:</label>
+      <select id="smart-schedule-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button class="btn btn-page-prev btn-sm" id="smart-schedule-prev">Previous</button>
+      <button class="btn btn-page-next btn-sm" id="smart-schedule-next">Next</button>
+      <span id="smart-schedule-info" class="text-white" style="font-size:13px;">Loading...</span>
+    </div>
+  </div>
   <div class="card-body p-0">
     <table class="table table-sm mb-0">
       <thead class="bg-dark text-white">
@@ -159,7 +173,21 @@
 
 <!-- Transactions -->
 <div class="card mb-3">
-  <div class="card-header bg-secondary text-white">Transactions</div>
+  <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap" style="gap:8px;">
+    <span>Transactions</span>
+    <div class="d-flex align-items-center" style="gap:8px;">
+      <label for="chargepoint-txns-per-page" class="mb-0" style="font-size:13px;">Per page:</label>
+      <select id="chargepoint-txns-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button class="btn btn-page-prev btn-sm" id="chargepoint-txns-prev">Previous</button>
+      <button class="btn btn-page-next btn-sm" id="chargepoint-txns-next">Next</button>
+      <span id="chargepoint-txns-info" class="text-light" style="font-size:13px;">Loading...</span>
+    </div>
+  </div>
   <div class="card-body p-0">
     <div style="max-height:300px; overflow-y:auto;">
       <table class="table table-striped table-sm mb-0">
@@ -422,14 +450,28 @@ function fromLocalInput(val) {
   try { return new Date(val).toISOString(); } catch(e) { return null; }
 }
 
+var scLimit = 10;
+var scOffset = 0;
+var scTotal = 0;
+
+function updateSmartScheduleInfo() {
+  var start = scTotal === 0 ? 0 : scOffset + 1;
+  var end = Math.min(scOffset + scLimit, scTotal);
+  $("#smart-schedule-info").text(start + " - " + end + " of " + scTotal);
+  $("#smart-schedule-prev").prop("disabled", scOffset === 0);
+  $("#smart-schedule-next").prop("disabled", scOffset + scLimit >= scTotal);
+}
+
 function loadSmartSchedules() {
-  $.getJSON("/api/smart-schedules?cp_id=" + encodeURIComponent(cpId), function(schedules) {
-    var active = schedules.filter(function(s) { return s.status === 'scheduled' || s.status === 'started'; });
+  $.getJSON("/api/smart-schedules?cp_id=" + encodeURIComponent(cpId) + "&limit=" + scLimit + "&offset=" + scOffset, function(result) {
+    var schedules = result.schedules || [];
+    scTotal = result.total || 0;
+    updateSmartScheduleInfo();
     var card = $("#smart-schedule-card");
     var body = $("#smart-schedule-body");
     body.empty();
 
-    if (schedules.length) {
+    if (scTotal) {
       card.show();
       schedules.forEach(function(s) {
         var statusBadge = '';
@@ -450,8 +492,8 @@ function loadSmartSchedules() {
       card.hide();
     }
 
-    // Gray out Remote Start and Smart Charge if there is an active schedule
-    if (active.length > 0) {
+    // Gray out Remote Start and Smart Charge if there is an active schedule (across all pages)
+    if (result.active_count > 0) {
       $("#btn-remote-start").prop("disabled", true).addClass("disabled").attr("title", "Smart charge is scheduled");
       $("#btn-smart-charge").prop("disabled", true).addClass("disabled").attr("title", "Smart charge is already scheduled");
     } else {
@@ -529,8 +571,7 @@ $("#btn-sc-save").click(function() {
 });
 
 function editSmartSchedule(id) {
-  $.getJSON("/api/smart-schedules?cp_id=" + encodeURIComponent(cpId), function(schedules) {
-    var s = schedules.find(function(x) { return x.id === id; });
+  $.getJSON("/api/smart-schedule/" + id, function(s) {
     if (s) openSmartChargeModal(s);
   });
 }
@@ -546,8 +587,23 @@ function deleteSmartSchedule(id) {
   }
 }
 
+var cpTxnLimit = 10;
+var cpTxnOffset = 0;
+var cpTxnTotal = 0;
+
+function updateCpTxnInfo() {
+  var start = cpTxnTotal === 0 ? 0 : cpTxnOffset + 1;
+  var end = Math.min(cpTxnOffset + cpTxnLimit, cpTxnTotal);
+  $("#chargepoint-txns-info").text(start + " - " + end + " of " + cpTxnTotal);
+  $("#chargepoint-txns-prev").prop("disabled", cpTxnOffset === 0);
+  $("#chargepoint-txns-next").prop("disabled", cpTxnOffset + cpTxnLimit >= cpTxnTotal);
+}
+
 function loadTxns() {
-  $.getJSON("/api/transactions?cp_id=" + encodeURIComponent(cpId), function(txns) {
+  $.getJSON("/api/transactions?cp_id=" + encodeURIComponent(cpId) + "&limit=" + cpTxnLimit + "&offset=" + cpTxnOffset, function(result) {
+    var txns = result.transactions || [];
+    cpTxnTotal = result.total || 0;
+    updateCpTxnInfo();
     const tb = $("#txn-body"); tb.empty();
     txns.forEach(function(t) {
       let e = '-';
@@ -570,11 +626,11 @@ function loadMV() {
 }
 
 function loadEvents() {
-  $.getJSON("/api/events?cp_id=" + encodeURIComponent(cpId), function(evts) {
+  // API already returns events newest-first; only fetch the 5 most recent
+  $.getJSON("/api/events?cp_id=" + encodeURIComponent(cpId) + "&limit=5", function(result) {
+    const events = result.events || [];
     const tb = $("#ev-body"); tb.empty();
-    // Show only the last 5 events
-    const lastFive = evts.slice(-5);
-    lastFive.forEach(function(ev) {
+    events.forEach(function(ev) {
       let ocpp = ev.ocpp_command || '';
       let msg = ev.message || '';
       tb.append('<tr><td>'+fmtDate(ev.timestamp)+'</td><td>'+sevBadge(ev.severity)+'</td><td>'+escapeHtml(ocpp)+'</td><td>'+escapeHtml(msg)+'</td></tr>');
@@ -648,6 +704,36 @@ function loadCurrentSession() {
 }
 
 loadStatus(); loadLiveStats(); loadCurrentSession(); loadTxns(); loadEvents(); loadSmartSchedules();
+$("#chargepoint-txns-prev").click(function() {
+  if (cpTxnOffset <= 0) return;
+  cpTxnOffset = Math.max(0, cpTxnOffset - cpTxnLimit);
+  loadTxns();
+});
+$("#chargepoint-txns-next").click(function() {
+  if (cpTxnOffset + cpTxnLimit >= cpTxnTotal) return;
+  cpTxnOffset += cpTxnLimit;
+  loadTxns();
+});
+$("#chargepoint-txns-per-page").change(function() {
+  cpTxnLimit = parseInt($(this).val(), 10) || 10;
+  cpTxnOffset = 0;
+  loadTxns();
+});
+$("#smart-schedule-prev").click(function() {
+  if (scOffset <= 0) return;
+  scOffset = Math.max(0, scOffset - scLimit);
+  loadSmartSchedules();
+});
+$("#smart-schedule-next").click(function() {
+  if (scOffset + scLimit >= scTotal) return;
+  scOffset += scLimit;
+  loadSmartSchedules();
+});
+$("#smart-schedule-per-page").change(function() {
+  scLimit = parseInt($(this).val(), 10) || 10;
+  scOffset = 0;
+  loadSmartSchedules();
+});
 setInterval(loadStatus, 5000);
 setInterval(loadLiveStats, 5000);
 setInterval(loadCurrentSession, 15000);

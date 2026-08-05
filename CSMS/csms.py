@@ -278,6 +278,9 @@ def api_charging_events():
     cp_id = request.args.get("cp_id")
     start = request.args.get("start")
     end = request.args.get("end")
+    query = request.args.get("q", "").strip().lower()
+    limit = request.args.get("limit", type=int)
+    offset = request.args.get("offset", type=int, default=0)
     events = cs_db.get_transactions(cp_id)
 
     def parse_ts(value):
@@ -325,10 +328,13 @@ def api_charging_events():
             return False
         return True
 
-    events = [txn for txn in events if in_window(txn)]
+    filtered_events = [txn for txn in events if in_window(txn)]
+    total = len(filtered_events)
+    if limit is not None:
+        filtered_events = filtered_events[offset:offset + limit]
 
     # Attach assigned_to for each id_tag (like in /api/transactions)
-    id_tags = list({t["id_tag"] for t in events if t.get("id_tag")})
+    id_tags = list({t["id_tag"] for t in filtered_events if t.get("id_tag")})
     assigned_map = {}
     if id_tags:
         for r in cs_db.get_rfids():
@@ -336,7 +342,7 @@ def api_charging_events():
                 assigned_map[r["id_tag"]] = r.get("assigned_to") or ""
     # Build chargepoint info map for CSV enrichment
     all_cps = {cp["cp_id"]: cp for cp in cs_db.get_chargepoints()}
-    for t in events:
+    for t in filtered_events:
         t["assigned_to"] = assigned_map.get(t["id_tag"], "")
         cp_info = all_cps.get(t.get("cp_id"), {})
         t["charger_model"] = cp_info.get("chargePointModel") or cp_info.get("model") or ""
@@ -346,7 +352,7 @@ def api_charging_events():
         t["charger_meter_type"] = cp_info.get("meterType") or ""
     # Attach car info for KM calculation
     cars = {c["id"]: c for c in cs_db.get_cars()}
-    for t in events:
+    for t in filtered_events:
         car = cars.get(t.get("car_id"))
         t["car_license_plate"] = car["license_plate"] if car else ""
         t["car_kwh_per_100km"] = car["kwh_per_100km"] if car else None
@@ -358,10 +364,10 @@ def api_charging_events():
                 energy_kwh = (t["meter_stop"] - t["meter_start"]) / 1000.0
                 t["km"] = round(energy_kwh / car["kwh_per_100km"] * 100, 1) if car["kwh_per_100km"] > 0 else None
 
-    _enrich_charge_session_from_meter(events)
+    _enrich_charge_session_from_meter(filtered_events)
 
     # Derive timing boundaries from event-sourced status history.
-    for t in events:
+    for t in filtered_events:
         started_dt = parse_ts(t.get("started_at"))
         stopped_dt = parse_ts(t.get("stopped_at"))
         session_start_dt = parse_ts(t.get("charge_session_start")) or started_dt
@@ -457,8 +463,14 @@ def api_charging_events():
         t["charging_end_at"] = charging_end_dt.isoformat() if charging_end_dt else None
 
     # Attach charging cost from Zonneplan tariff
-    _enrich_costs(events)
-    return jsonify(events)
+    _enrich_costs(filtered_events)
+    return jsonify({
+        "events": filtered_events,
+        "transactions": filtered_events,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 def _enrich_costs(txns):
@@ -637,7 +649,10 @@ def api_rfid_delete(rfid_id):
 @app.route("/api/transactions")
 def api_transactions():
     cp_id = request.args.get("cp_id")
-    txns = cs_db.get_transactions(cp_id)
+    limit = request.args.get("limit", type=int)
+    offset = request.args.get("offset", type=int, default=0)
+    total = cs_db.get_transactions_count(cp_id)
+    txns = cs_db.get_transactions(cp_id, limit=limit, offset=offset)
     # Build id_tag -> assigned_to map for all used id_tags
     id_tags = list({t["id_tag"] for t in txns if t.get("id_tag")})
     assigned_map = {}
@@ -653,18 +668,19 @@ def api_transactions():
         car = cars.get(t.get("car_id"))
         t["car_license_plate"] = car["license_plate"] if car else ""
         t["car_kwh_per_100km"] = car["kwh_per_100km"] if car else None
-        # Use stored km (frozen at car-assignment time) if available; fall back
-        # to dynamic calculation when it is missing or was frozen as 0 (e.g. the
-        # car was assigned before the session had accumulated any energy).
         if not t.get("km"):
             if car and t.get("meter_stop") is not None and t.get("meter_start") is not None:
                 energy_kwh = (t["meter_stop"] - t["meter_start"]) / 1000.0
                 t["km"] = round(energy_kwh / car["kwh_per_100km"] * 100, 1) if car["kwh_per_100km"] > 0 else None
 
     _enrich_charge_session_from_meter(txns)
-    # Attach charging cost from Zonneplan tariff
     _enrich_costs(txns)
-    return jsonify(txns)
+    return jsonify({
+        "transactions": txns,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 @app.route("/api/transaction/<int:txn_id>")
@@ -1328,7 +1344,26 @@ def api_charging_plan():
 @app.route("/api/smart-schedules")
 def api_smart_schedules():
     cp_id = request.args.get("cp_id")
-    return jsonify(cs_db.get_smart_schedules(cp_id))
+    limit = request.args.get("limit", type=int)
+    offset = request.args.get("offset", type=int, default=0)
+    total = cs_db.get_smart_schedules_count(cp_id)
+    schedules = cs_db.get_smart_schedules(cp_id, limit=limit, offset=offset)
+    active_count = len(cs_db.get_active_smart_schedules(cp_id))
+    return jsonify({
+        "schedules": schedules,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "active_count": active_count,
+    })
+
+
+@app.route("/api/smart-schedule/<int:schedule_id>")
+def api_get_smart_schedule(schedule_id):
+    schedule = cs_db.get_smart_schedule(schedule_id)
+    if not schedule:
+        return jsonify(error="Schedule not found"), 404
+    return jsonify(schedule)
 
 
 @app.route("/api/smart-schedule", methods=["POST"])
@@ -1575,14 +1610,28 @@ def api_events():
     query = request.args.get("q", "").strip()
     ocpp_command = request.args.get("ocpp_command", "").strip()
     severity = request.args.get("severity", "DEBUG").strip().upper()
-    return jsonify(
-        cs_db.get_events(
-            cp_id,
-            query if query else None,
-            ocpp_command if ocpp_command else None,
-            severity_min=severity,
-        )
+    limit = request.args.get("limit", type=int)
+    offset = request.args.get("offset", type=int, default=0)
+    total = cs_db.get_events_count(
+        cp_id,
+        query if query else None,
+        ocpp_command if ocpp_command else None,
+        severity_min=severity,
     )
+    evts = cs_db.get_events(
+        cp_id,
+        query if query else None,
+        ocpp_command if ocpp_command else None,
+        severity_min=severity,
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({
+        "events": evts,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 @app.route("/api/ocpp-commands")

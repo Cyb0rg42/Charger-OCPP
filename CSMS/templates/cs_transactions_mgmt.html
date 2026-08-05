@@ -4,12 +4,24 @@
 <h2 class="section-title">Transaction Configuration</h2>
 
 <!-- Filters Row -->
-<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center;">
-  <div style="display: flex; gap: 12px; flex: 1;">
+<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+  <div style="display: flex; gap: 12px; flex: 1; min-width: 320px; flex-wrap: wrap; align-items: center;">
     <input type="date" id="txn-start" placeholder="Start date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
     <input type="date" id="txn-end" placeholder="End date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
     <input type="text" id="txn-filter" placeholder="Search charge point/session..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; flex: 1; min-width: 250px;">
     <button class="btn btn-primary" id="btn-refresh-txns" style="white-space: nowrap;">Refresh</button>
+  </div>
+  <div style="display: flex; gap: 8px; align-items: center;">
+    <label for="txn-per-page" style="margin-bottom:0; font-size:13px;">Per page:</label>
+    <select id="txn-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <button class="btn btn-page-prev btn-sm" id="txn-prev">Previous</button>
+    <button class="btn btn-page-next btn-sm" id="txn-next">Next</button>
+    <span id="txn-info" class="text-muted" style="font-size:13px;">Loading...</span>
   </div>
 </div>
 
@@ -234,22 +246,39 @@ function renderTransactions(txns) {
   });
 }
 
+var txnLimit = 10;
+var txnOffset = 0;
+var txnTotal = 0;
+
+function updateTxnInfo() {
+  var start = txnTotal === 0 ? 0 : txnOffset + 1;
+  var end = Math.min(txnOffset + txnLimit, txnTotal);
+  $('#txn-info').text(start + ' - ' + end + ' of ' + txnTotal);
+  $('#txn-prev').prop('disabled', txnOffset === 0);
+  $('#txn-next').prop('disabled', txnOffset + txnLimit >= txnTotal);
+}
+
 function refreshTransactions() {
   var start = $('#txn-start').val();
   var end = $('#txn-end').val();
   var filter = $('#txn-filter').val().trim().toLowerCase();
-  var query = '';
-  if (start) query += 'start=' + encodeURIComponent(start);
-  if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
-  $.getJSON('/api/charging-events?' + query, function(txns) {
+  var query = [];
+  if (start) query.push('start=' + encodeURIComponent(start));
+  if (end) query.push('end=' + encodeURIComponent(end));
+  query.push('limit=' + txnLimit);
+  query.push('offset=' + txnOffset);
+  $.getJSON('/api/charging-events?' + query.join('&'), function(result) {
+    var txns = result.events || [];
+    txnTotal = result.total || 0;
     if (filter) {
       txns = txns.filter(function(t) {
         return ('' + t.cp_id).toLowerCase().includes(filter) ||
                ('' + t.id).includes(filter) ||
                ('' + (t.assigned_to || '')).toLowerCase().includes(filter) ||
-               ('' + t.id_tag).toLowerCase().includes(filter);
+               ('' + (t.id_tag || '')).toLowerCase().includes(filter);
       });
     }
+    updateTxnInfo();
     renderTransactions(txns);
   });
 }
@@ -327,7 +356,25 @@ $('#btn-save-txn').click(function() {
   });
 });
 
-$('#btn-refresh-txns').click(refreshTransactions);
+$('#btn-refresh-txns').click(function() {
+  txnOffset = 0;
+  refreshTransactions();
+});
+$('#txn-prev').click(function() {
+  if (txnOffset <= 0) return;
+  txnOffset = Math.max(0, txnOffset - txnLimit);
+  refreshTransactions();
+});
+$('#txn-next').click(function() {
+  if (txnOffset + txnLimit >= txnTotal) return;
+  txnOffset += txnLimit;
+  refreshTransactions();
+});
+$('#txn-per-page').change(function() {
+  txnLimit = parseInt($(this).val(), 10) || 10;
+  txnOffset = 0;
+  refreshTransactions();
+});
 
 $(document).on('change', '.car-select', function() {
   var txnId = $(this).data('txn-id');

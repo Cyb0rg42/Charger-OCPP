@@ -6,6 +6,22 @@
 
 <!-- Recent Transactions -->
 <h2 class="section-title">Recent Transactions</h2>
+<div class="d-flex justify-content-between align-items-center mb-2" style="gap:12px;">
+  <div class="d-flex align-items-center" style="gap:8px;">
+    <label for="home-txns-per-page" style="margin-bottom:0; font-size:13px;">Per page:</label>
+    <select id="home-txns-per-page" class="form-select form-select-sm" style="width:auto; min-width:80px;">
+      <option value="5" selected>5</option>
+      <option value="10">10</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+  </div>
+  <div class="d-flex align-items-center" style="gap:8px;">
+    <button class="btn btn-page-prev btn-sm" id="home-txns-prev">Previous</button>
+    <span id="home-txns-info" class="text-muted" style="font-size:13px;">Loading...</span>
+    <button class="btn btn-page-next btn-sm" id="home-txns-next">Next</button>
+  </div>
+</div>
 <div class="table-container">
   <div style="max-height: 500px; overflow-y: auto;">
     <table class="table">
@@ -148,15 +164,30 @@ $("#cp-cards").on("click", ".status-card", function(e) {
   if (cpId) navigateToChargePoint(cpId);
 });
 
+var homeTxnLimit = 5;
+var homeTxnOffset = 0;
+var homeTxnTotal = 0;
+
+function updateHomeTxnInfo() {
+  var start = homeTxnTotal === 0 ? 0 : homeTxnOffset + 1;
+  var end = Math.min(homeTxnOffset + homeTxnLimit, homeTxnTotal);
+  $("#home-txns-info").text(start + " - " + end + " of " + homeTxnTotal);
+  $("#home-txns-prev").prop("disabled", homeTxnOffset === 0);
+  $("#home-txns-next").prop("disabled", homeTxnOffset + homeTxnLimit >= homeTxnTotal);
+}
+
 function loadTransactions() {
-  $.getJSON("/api/transactions", function(txns) {
+  $.getJSON("/api/transactions?limit=" + homeTxnLimit + "&offset=" + homeTxnOffset, function(result) {
+    var txns = result.transactions || [];
+    homeTxnTotal = result.total || 0;
+    updateHomeTxnInfo();
     const tbody = $("#txn-body");
     tbody.empty();
     if (!txns || txns.length === 0) {
       tbody.html('<tr><td colspan="15" style="text-align: center; color: var(--text-secondary); padding: 20px;">No transactions found.</td></tr>');
       return;
     }
-    txns.slice(0, 50).forEach(function(txn) {
+    txns.forEach(function(txn) {
       let energy = '-';
       if (txn.meter_stop !== null && txn.meter_start !== null) {
         const wh = txn.meter_stop - txn.meter_start;
@@ -191,7 +222,25 @@ function loadTransactions() {
 $(document).ready(function() {
   loadChargePoints();
   loadTransactions();
-  
+
+  $('#home-txns-prev').click(function() {
+    if (homeTxnOffset <= 0) return;
+    homeTxnOffset = Math.max(0, homeTxnOffset - homeTxnLimit);
+    loadTransactions();
+  });
+
+  $('#home-txns-next').click(function() {
+    if (homeTxnOffset + homeTxnLimit >= homeTxnTotal) return;
+    homeTxnOffset += homeTxnLimit;
+    loadTransactions();
+  });
+
+  $('#home-txns-per-page').change(function() {
+    homeTxnLimit = parseInt($(this).val(), 10) || 10;
+    homeTxnOffset = 0;
+    loadTransactions();
+  });
+
   // Refresh data every 10 seconds
   setInterval(function() {
     loadChargePoints();
