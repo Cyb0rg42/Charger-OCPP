@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block page_title %}Statistics{% endblock %}
+{% block content %}
+
+<!-- Stat cards -->
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="stat-value" id="total-sessions" style="color:var(--accent-cyan);">0</div>
+    <div class="stat-label">Total Sessions</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="total-energy" style="color:var(--accent-green);">0.000</div>
+    <div class="stat-label">Total Energy (kWh)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="charging-status" style="color:var(--text-secondary);">No</div>
+    <div class="stat-label">Currently Charging</div>
+  </div>
+</div>
+
+<!-- Session History -->
+<div class="card">
+  <div class="card-header-custom">
+    <span class="card-title-custom">Session History</span>
+  </div>
+  <table class="data-table" id="sessions-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Duration</th>
+        <th>Energy (kWh)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="session-table-body"></tbody>
+  </table>
+  <div class="empty-state" id="no-sessions" style="display:none;">No sessions recorded yet.</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const socket = io();
+
+function formatDuration(startStr, endStr) {
+  const start = new Date(startStr);
+  const end = endStr ? new Date(endStr) : new Date();
+  const diffMs = end - start;
+  const hrs = Math.floor(diffMs / 3600000);
+  const mins = Math.floor((diffMs % 3600000) / 60000);
+  const secs = Math.floor((diffMs % 60000) / 1000);
+  if (hrs > 0) return hrs + "h " + mins + "m " + secs + "s";
+  return mins + "m " + secs + "s";
+}
+
+let activeSessionTimer = null;
+let lastData = null;
+
+function updateFromState(data) {
+  lastData = data;
+  document.getElementById('total-sessions').textContent = data.sessions.length;
+  document.getElementById('total-energy').textContent = data.total_energy_kwh.toFixed(3);
+  const chgEl = document.getElementById('charging-status');
+  chgEl.textContent = data.charging ? 'Yes' : 'No';
+  chgEl.style.color = data.charging ? 'var(--accent-green)' : 'var(--text-secondary)';
+
+  const tbody = document.getElementById('session-table-body');
+  tbody.innerHTML = '';
+
+  if (data.sessions.length === 0) {
+    document.getElementById('no-sessions').style.display = 'block';
+    document.getElementById('sessions-table').style.display = 'none';
+  } else {
+    document.getElementById('no-sessions').style.display = 'none';
+    document.getElementById('sessions-table').style.display = '';
+    const reversed = [...data.sessions].reverse();
+    reversed.forEach(s => {
+      const isActive = !s.ended_at;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${s.id}</td>` +
+        `<td>${(function(d){if(!d)return'-';var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),sc=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+sc})(s.started_at)}</td>` +
+        `<td>${isActive ? '—' : (function(d){if(!d)return'-';var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),sc=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+sc})(s.ended_at)}</td>` +
+        `<td class="${isActive ? 'active-duration' : ''}" data-start="${isActive ? s.started_at : ''}">${formatDuration(s.started_at, s.ended_at)}</td>` +
+        `<td class="${isActive ? 'active-energy' : ''}">${s.energy_kwh.toFixed(3)}</td>` +
+        `<td style="color:${isActive ? 'var(--accent-yellow)' : 'var(--accent-green)'}; font-weight:${isActive ? '600' : '400'}">${isActive ? 'Active' : 'Completed'}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  if (activeSessionTimer) clearInterval(activeSessionTimer);
+  if (data.charging) {
+    activeSessionTimer = setInterval(tickActiveSession, 1000);
+  }
+}
+
+function tickActiveSession() {
+  document.querySelectorAll('.active-duration').forEach(el => {
+    const startStr = el.getAttribute('data-start');
+    if (startStr) el.textContent = formatDuration(startStr, null);
+  });
+  if (lastData) {
+    const active = lastData.sessions.find(s => !s.ended_at);
+    if (active) {
+      document.querySelectorAll('.active-energy').forEach(el => el.textContent = active.energy_kwh.toFixed(3));
+      document.getElementById('total-energy').textContent = lastData.total_energy_kwh.toFixed(3);
+    }
+  }
+}
+
+function refresh() { $.getJSON("/api/state", updateFromState); }
+
+socket.on("state_update", updateFromState);
+$(document).ready(refresh);
+</script>
+{% endblock %}
+

@@ -1,0 +1,234 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h4 class="text-white mb-3">Charging Station Settings</h4>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="text-white mb-3">General</h5>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label for="default-car-select" class="form-label text-white">Default Car</label>
+        <select id="default-car-select" class="form-select bg-dark text-white border-secondary"></select>
+      </div>
+      <div class="col-md-2">
+        <button id="btn-save-default-car" class="btn btn-success w-100">Save</button>
+      </div>
+      <div class="col-md-6">
+        <span id="default-car-result" class="text-muted"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row mb-2 g-2">
+  <div class="col-md-3">
+    <input type="text" id="settings-search" class="form-control bg-dark text-white border-secondary" placeholder="Search charge point or firmware..." aria-label="Search settings">
+  </div>
+  <div class="col-md-2">
+    <button class="btn btn-primary w-100" id="btn-refresh-settings">Refresh</button>
+  </div>
+  <div class="col-md-2">
+    <button class="btn btn-outline-success w-100" id="btn-firmware-update">Bulk Firmware Update</button>
+  </div>
+</div>
+<div class="card">
+  <div class="card-body p-0">
+    <div style="max-height:620px; overflow-y:auto;">
+      <table class="table table-striped table-sm mb-0" id="settings-table">
+        <thead class="sticky-top bg-dark text-white">
+          <tr>
+            <th>CP ID</th><th>Site</th><th>Firmware</th><th>Status</th><th>Last Seen</th><th>Fallback</th>
+          </tr>
+        </thead>
+        <tbody id="settings-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h4 class="text-white mb-3 mt-4">Site Management</h4>
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row g-2 mb-2">
+      <div class="col-md-4">
+        <input id="site-name" type="text" class="form-control bg-dark text-white border-secondary" placeholder="Site Name">
+      </div>
+      <div class="col-md-2">
+        <input id="site-street" type="text" class="form-control bg-dark text-white border-secondary" placeholder="Street">
+      </div>
+      <div class="col-md-2">
+        <input id="site-house-number" type="text" class="form-control bg-dark text-white border-secondary" placeholder="House #">
+      </div>
+      <div class="col-md-2">
+        <input id="site-zip" type="text" class="form-control bg-dark text-white border-secondary" placeholder="Zip Code">
+      </div>
+      <div class="col-md-2">
+        <input id="site-city" type="text" class="form-control bg-dark text-white border-secondary" placeholder="City">
+      </div>
+      <div class="col-md-2 mt-2">
+        <input id="site-country" type="text" class="form-control bg-dark text-white border-secondary" placeholder="Country">
+      </div>
+      <div class="col-md-2 mt-2">
+        <button id="btn-save-site" class="btn btn-success w-100">Save Site</button>
+      </div>
+      <div class="col-md-2 mt-2">
+        <button id="btn-reset-site" class="btn btn-secondary w-100">Reset</button>
+      </div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <select id="site-assign-select" class="form-select bg-dark text-white border-secondary"></select>
+      </div>
+      <div class="col-md-4">
+        <select id="cp-assign-select" class="form-select bg-dark text-white border-secondary"></select>
+      </div>
+      <div class="col-md-2">
+        <button id="btn-assign-cp" class="btn btn-primary w-100">Assign Charge Point</button>
+      </div>
+    </div>
+    <div style="max-height:320px; overflow-y:auto;">
+      <table class="table table-striped table-sm mb-0" id="sites-table">
+        <thead class="sticky-top bg-dark text-white">
+          <tr><th>Name</th><th>Location</th><th>Assigned CPs</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="sites-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+function hx(s){return s||'-';}
+function refreshSettings(){ var q=$('#settings-search').val().trim().toLowerCase(); $.getJSON('/api/station-settings', function(data){ var tb=$('#settings-body'); tb.empty(); if(!data.length){ tb.append('<tr><td colspan="6" class="text-center text-muted">No stations configured.</td></tr>'); return; } data.forEach(function(cp){ if(q && !(cp.cp_id.toLowerCase().includes(q)||cp.firmware.toLowerCase().includes(q)||cp.site.toLowerCase().includes(q))) return; tb.append('<tr><td>'+cp.cp_id+'</td><td>'+hx(cp.site)+'</td><td>'+hx(cp.firmware)+'</td><td>'+hx(cp.status)+'</td><td>'+hx(cp.last_seen)+'</td><td>'+hx(cp.fallback_mode)+'</td></tr>'); }); }); }
+function bulkFirmware(){ if(!confirm('Apply firmware update to all visible stations?')) return; alert('Firmware update process triggered (simulated).'); }
+
+function resetSiteForm(){
+  window.editingSiteId = null;
+  $('#site-name').val('');
+  $('#site-street').val('');
+  $('#site-house-number').val('');
+  $('#site-zip').val('');
+  $('#site-city').val('');
+  $('#site-country').val('');
+  $('#btn-save-site').text('Save Site');
+}
+
+function refreshSites(){
+  $.getJSON('/api/sites', function(sites){
+    var tbody = $('#sites-body');
+    tbody.empty();
+    var siteAssign = $('#site-assign-select');
+    siteAssign.empty();
+    siteAssign.append('<option value="">-- Select Site --</option>');
+
+    if(!sites.length){
+      tbody.append('<tr><td colspan="4" class="text-center text-muted">No sites configured.</td></tr>');
+    }
+
+    sites.forEach(function(site){
+      var assignedCps = site.chargepoints || [];
+      var location = [site.street, site.house_number, site.zip_code, site.city, site.country].filter(Boolean).join(', ');
+      var actionRow = '<button class="btn btn-sm btn-light me-1" data-site-id="'+site.id+'" data-action="edit">Edit</button>'
+                    + '<button class="btn btn-sm btn-danger" data-site-id="'+site.id+'" data-action="delete">Delete</button>';
+      tbody.append('<tr><td>'+hx(site.name)+'</td><td>'+hx(location)+'</td><td>'+hx(assignedCps.join(', '))+'</td><td>'+actionRow+'</td></tr>');
+      siteAssign.append('<option value="'+site.id+'">'+hx(site.name)+'</option>');
+    });
+  });
+}
+
+function refreshAssignCpList(){
+  $.getJSON('/api/chargepoints', function(cps){
+    var cpSelect = $('#cp-assign-select');
+    cpSelect.empty();
+    cpSelect.append('<option value="">-- Select Charge Point --</option>');
+    cps.forEach(function(cp){ cpSelect.append('<option value="'+cp.cp_id+'">'+cp.cp_id+' ('+hx(cp.site)+')</option>'); });
+  });
+}
+
+$('#btn-refresh-settings').click(refreshSettings);
+$('#btn-firmware-update').click(bulkFirmware);
+$('#btn-reset-site').click(resetSiteForm);
+$('#btn-save-site').click(function(){
+  var payload = {
+    name: $('#site-name').val().trim(),
+    street: $('#site-street').val().trim(),
+    house_number: $('#site-house-number').val().trim(),
+    zip_code: $('#site-zip').val().trim(),
+    city: $('#site-city').val().trim(),
+    country: $('#site-country').val().trim(),
+  };
+  if(!payload.name){ alert('Site name is required'); return; }
+  if(window.editingSiteId){
+    $.ajax({url:'/api/site/'+window.editingSiteId, method:'PUT', contentType:'application/json', data:JSON.stringify(payload), success:function(){ refreshSites(); refreshSettings(); resetSiteForm(); }});
+  } else {
+    $.ajax({url:'/api/site', method:'POST', contentType:'application/json', data:JSON.stringify(payload), success:function(){ refreshSites(); refreshSettings(); resetSiteForm(); }});
+  }
+});
+
+$('#sites-body').on('click', 'button[data-action="edit"]', function(){
+  var siteId = $(this).data('site-id');
+  $.getJSON('/api/sites', function(sites){ var site = sites.find(function(s){return s.id===siteId}); if(!site){return;} window.editingSiteId = site.id; $('#site-name').val(site.name); $('#site-street').val(site.street); $('#site-house-number').val(site.house_number); $('#site-zip').val(site.zip_code); $('#site-city').val(site.city); $('#site-country').val(site.country); $('#btn-save-site').text('Update Site'); });
+});
+
+$('#sites-body').on('click', 'button[data-action="delete"]', function(){
+  var siteId = $(this).data('site-id');
+  if(!confirm('Delete this site and unassign associated charge points?')) return;
+  $.ajax({url:'/api/site/'+siteId, method:'DELETE', success:function(){ refreshSites(); refreshSettings(); }});
+});
+
+$('#btn-assign-cp').click(function(){
+  var siteId = $('#site-assign-select').val();
+  var cpId = $('#cp-assign-select').val();
+  if(!siteId || !cpId){ alert('Select both site and charge point'); return; }
+  $.ajax({url:'/api/site/'+siteId+'/assign-chargepoint', method:'POST', contentType:'application/json', data:JSON.stringify({cp_id: cpId}), success:function(){ refreshSites(); refreshSettings(); refreshAssignCpList(); }});
+});
+
+$(function(){ refreshSettings(); refreshSites(); refreshAssignCpList(); setInterval(refreshSettings, 10000); });
+
+function loadDefaultCar(){
+  $.when(
+    $.getJSON('/api/cars'),
+    $.getJSON('/api/app-settings')
+  ).done(function(carsResp, settingsResp){
+    var cars = carsResp[0] || [];
+    var settings = settingsResp[0] || {};
+    var currentPlate = settings.default_car_license_plate || '';
+    var $sel = $('#default-car-select');
+    $sel.empty();
+    $sel.append('<option value="">-- None --</option>');
+    cars.forEach(function(c){
+      var label = (c.brand || '') + ' ' + (c.model || '') + (c.license_plate ? ' (' + c.license_plate + ')' : '');
+      $sel.append('<option value="' + (c.license_plate || '') + '">' + label + '</option>');
+    });
+    if (currentPlate) {
+      $sel.val(currentPlate);
+      // If the configured plate isn't in the list, add it as a placeholder option.
+      if ($sel.val() !== currentPlate) {
+        $sel.append('<option value="' + currentPlate + '" selected>' + currentPlate + ' (not in car list)</option>');
+        $sel.val(currentPlate);
+      }
+    }
+  });
+}
+
+$('#btn-save-default-car').on('click', function(){
+  var plate = $('#default-car-select').val() || '';
+  $.ajax({
+    url: '/api/app-settings',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ default_car_license_plate: plate }),
+    success: function(){
+      $('#default-car-result').removeClass('text-danger').addClass('text-success').text('Default car saved.');
+      setTimeout(function(){ $('#default-car-result').text(''); }, 3000);
+    },
+    error: function(){
+      $('#default-car-result').removeClass('text-success').addClass('text-danger').text('Failed to save.');
+    }
+  });
+});
+
+$(function(){ loadDefaultCar(); });
+</script>
+{% endblock %}

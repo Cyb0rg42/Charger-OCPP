@@ -1,0 +1,265 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Zonneplan Monitoring</h2>
+
+<!-- Current Tariff Card -->
+<div class="card mb-3" id="zp-tariff-card">
+  <div class="card-header">Current Electricity Tariff</div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-4 text-center">
+        <div style="font-size: 2.5rem; font-weight: bold; color: var(--accent-primary);" id="zp-tariff-value">-</div>
+        <div style="color: var(--text-secondary);">€/kWh</div>
+      </div>
+      <div class="col-md-4 text-center">
+        <div style="font-size: 1.5rem; font-weight: bold; color: var(--text-primary);" id="zp-tariff-group">-</div>
+        <div style="color: var(--text-secondary);">Tariff Group</div>
+      </div>
+      <div class="col-md-4 text-end" style="display: flex; align-items: center; justify-content: flex-end;">
+        <button id="btn-zp-refresh-tariff" class="btn btn-outline-light">Refresh</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Stored Tariffs Card -->
+<div class="card" id="zp-tariffs-card">
+  <div class="card-header">Stored Tariff History</div>
+  <div class="card-body">
+    <div style="display: flex; gap: 12px; margin-bottom: 12px; align-items: center; flex-wrap: wrap;">
+      <input type="datetime-local" id="zp-tariff-start" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+      <input type="datetime-local" id="zp-tariff-end" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+      <button class="btn btn-primary" id="btn-zp-filter-tariffs">Filter</button>
+      <button class="btn btn-outline-light" id="btn-zp-reset-tariffs">Reset</button>
+    </div>
+    <!-- Tariff Chart -->
+    <div style="margin-bottom: 16px; height: 400px; position: relative;">
+      <canvas id="zp-tariff-chart"></canvas>
+    </div>
+    <div style="max-height:400px; overflow-y:auto;">
+      <table class="table table-striped table-sm mb-0">
+        <thead class="sticky-top">
+          <tr><th>Time (Amsterdam)</th><th>Tariff (€/kWh)</th><th>Group</th><th>Fetched At</th></tr>
+        </thead>
+        <tbody id="zp-tariffs-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+var tariffChart = null;
+
+var AMS_TZ = 'Europe/Amsterdam';
+
+function toAmsterdam(date) {
+  var parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: AMS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).formatToParts(date);
+  var o = {};
+  parts.forEach(function(p) { o[p.type] = p.value; });
+  return o;
+}
+
+function formatDateAmsterdam(date) {
+  var o = toAmsterdam(date);
+  return o.year + '-' + o.month + '-' + o.day + ' ' + o.hour + ':' + o.minute + ':' + o.second;
+}
+
+function utcHourToAmsterdam(hourStr) {
+  if (!hourStr) return '-';
+  // hourStr is a quarter-hour slot key "YYYY-MM-DD HH:MM" (UTC). Older stored
+  // rows may still be the pre-quarter-hour "YYYY-MM-DD HH" format — treat
+  // those as :00.
+  var hasMinutes = hourStr.length > 13;
+  var iso = hourStr.replace(' ', 'T') + (hasMinutes ? ':00Z' : ':00:00Z');
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return hourStr;
+  var o = toAmsterdam(d);
+  return o.year + '-' + o.month + '-' + o.day + ' ' + o.hour + ':' + o.minute;
+}
+
+function formatFetchedAt(isoStr) {
+  if (!isoStr) return '-';
+  var d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  return formatDateAmsterdam(d);
+}
+
+function localInputToUtcHour(dtLocalVal) {
+  var parts = dtLocalVal.split('T');
+  var probe = new Date(parts[0] + 'T' + parts[1] + ':00.000Z');
+  var amsProbe = toAmsterdam(probe);
+  var amsProbeDate = new Date(amsProbe.year + '-' + amsProbe.month + '-' + amsProbe.day + 'T' + amsProbe.hour + ':' + amsProbe.minute + ':00.000Z');
+  var offsetMs = amsProbeDate.getTime() - probe.getTime();
+  var utcDate = new Date(probe.getTime() - offsetMs);
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  // Keep minutes: stored tariff keys are quarter-hour slots ("YYYY-MM-DD HH:MM").
+  // Truncating to the hour here would make an end-bound like "...18" compare
+  // as LESS than every "...18:MM" slot (longer string, same prefix), silently
+  // excluding the whole final hour from range filters.
+  return utcDate.getUTCFullYear() + '-' + pad(utcDate.getUTCMonth() + 1) + '-' + pad(utcDate.getUTCDate()) + ' ' +
+    pad(utcDate.getUTCHours()) + ':' + pad(utcDate.getUTCMinutes());
+}
+
+function refreshCurrentTariff() {
+  $.getJSON('/api/zonneplan/tariff', function(data) {
+    if (data.error) {
+      $('#zp-tariff-value').text('Error');
+      return;
+    }
+    var tariff = data.tariff_eur_per_kwh;
+    $('#zp-tariff-value').text(tariff !== null ? '€ ' + tariff.toFixed(4) : '-');
+    $('#zp-tariff-group').text(data.tariff_group || '-');
+  }).fail(function() {
+    $('#zp-tariff-value').text('Error');
+  });
+}
+
+function getCurrentUtcQuarterKey() {
+  var now = new Date();
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  var quarterMin = Math.floor(now.getUTCMinutes() / 15) * 15;
+  return now.getUTCFullYear() + '-' + pad(now.getUTCMonth() + 1) + '-' + pad(now.getUTCDate()) + ' ' +
+    pad(now.getUTCHours()) + ':' + pad(quarterMin);
+}
+
+function renderTariffChart(data) {
+  var ctx = document.getElementById('zp-tariff-chart').getContext('2d');
+  // Data comes sorted DESC from API — newest first (left), oldest last (right)
+  var labels = data.map(function(t) { return utcHourToAmsterdam(t.hour); });
+  var values = data.map(function(t) { return t.tariff_eur_per_kwh; });
+
+  // Find the current 15-minute slot to mark with a red dot
+  var currentQuarterKey = getCurrentUtcQuarterKey();
+  var pointColors = [];
+  var pointRadii = [];
+  var pointBorders = [];
+  data.forEach(function(t) {
+    if (t.hour === currentQuarterKey) {
+      pointColors.push('#ff0000');
+      pointRadii.push(8);
+      pointBorders.push('#ff0000');
+    } else {
+      pointColors.push('#00b4d8');
+      pointRadii.push(2);
+      pointBorders.push('#00b4d8');
+    }
+  });
+
+  if (tariffChart) { tariffChart.destroy(); }
+
+  tariffChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Tariff (€/kWh)',
+        data: values,
+        borderColor: '#00b4d8',
+        backgroundColor: 'rgba(0, 180, 216, 0.15)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: pointRadii,
+        pointHoverRadius: 5,
+        pointBackgroundColor: pointColors,
+        pointBorderColor: pointBorders
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#ccc' } }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Time (Amsterdam)', color: '#ccc' },
+          ticks: { color: '#aaa', maxRotation: 45, autoSkip: true, maxTicksLimit: 20 },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        y: {
+          title: { display: true, text: '€/kWh', color: '#ccc' },
+          ticks: { color: '#aaa' },
+          grid: { color: 'rgba(255,255,255,0.08)' }
+        }
+      }
+    }
+  });
+}
+
+function loadStoredTariffs(start, end) {
+  var query = '';
+  if (start && end) {
+    var s = localInputToUtcHour(start);
+    var e = localInputToUtcHour(end);
+    query = '?start=' + encodeURIComponent(s) + '&end=' + encodeURIComponent(e);
+  } else {
+    // Default: last 3 days worth of data (all available, newest first)
+    var now = new Date();
+    var threeDaysAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    var sDefault = threeDaysAgo.getUTCFullYear() + '-' + pad(threeDaysAgo.getUTCMonth() + 1) + '-' + pad(threeDaysAgo.getUTCDate()) + ' ' + pad(threeDaysAgo.getUTCHours()) + ':' + pad(threeDaysAgo.getUTCMinutes());
+    // Use a far-future end to include all future tariffs. Keep minutes: an
+    // hour-only bound like "...18" sorts BEFORE every "...18:MM" slot
+    // (longer string, same prefix), which would silently drop that hour.
+    var farFuture = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    var eDefault = farFuture.getUTCFullYear() + '-' + pad(farFuture.getUTCMonth() + 1) + '-' + pad(farFuture.getUTCDate()) + ' ' + pad(farFuture.getUTCHours()) + ':' + pad(farFuture.getUTCMinutes());
+    query = '?start=' + encodeURIComponent(sDefault) + '&end=' + encodeURIComponent(eDefault);
+  }
+  $.getJSON('/api/zonneplan/tariffs' + query, function(data) {
+    var tb = $('#zp-tariffs-body');
+    tb.empty();
+    if (data && data.length) {
+      data.forEach(function(t) {
+        tb.append(
+          '<tr>' +
+          '<td>' + escapeHtml(utcHourToAmsterdam(t.hour)) + '</td>' +
+          '<td>€ ' + t.tariff_eur_per_kwh.toFixed(4) + '</td>' +
+          '<td>' + escapeHtml(t.tariff_group || '-') + '</td>' +
+          '<td>' + escapeHtml(formatFetchedAt(t.fetched_at)) + '</td>' +
+          '</tr>'
+        );
+      });
+      renderTariffChart(data);
+    } else {
+      tb.append('<tr><td colspan="4" class="text-center text-muted">No stored tariff data.</td></tr>');
+      if (tariffChart) { tariffChart.destroy(); tariffChart = null; }
+    }
+  });
+}
+
+$('#btn-zp-refresh-tariff').on('click', refreshCurrentTariff);
+
+$('#btn-zp-filter-tariffs').on('click', function() {
+  var start = $('#zp-tariff-start').val();
+  var end = $('#zp-tariff-end').val();
+  if (!start || !end) {
+    alert('Please select both start and end date/time.');
+    return;
+  }
+  loadStoredTariffs(start, end);
+});
+
+$('#btn-zp-reset-tariffs').on('click', function() {
+  $('#zp-tariff-start').val('');
+  $('#zp-tariff-end').val('');
+  loadStoredTariffs();
+});
+
+$(document).ready(function() {
+  refreshCurrentTariff();
+  loadStoredTariffs();
+});
+</script>
+{% endblock %}

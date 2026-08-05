@@ -1,0 +1,551 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Charging Plan</h2>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="card-title text-white mb-3">Settings</h5>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label for="cp-power" class="form-label text-white">Charging Power (kW)</label>
+        <input type="number" class="form-control" id="cp-power" value="11" step="0.1" min="0.1"
+               style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      </div>
+      <div class="col-md-3">
+        <label for="cp-default-left" class="form-label text-white">Default Left Battery (%)</label>
+        <input type="number" class="form-control" id="cp-default-left" value="20" step="1" min="0" max="100"
+               style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Average Tariff (forecast)</label>
+        <div class="form-control"
+             id="cp-avg-tariff"
+             style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">-</div>
+      </div>
+      <div class="col-md-3">
+        <button id="btn-cp-recompute" class="btn btn-primary w-100">Recompute All</button>
+      </div>
+    </div>
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-md-6">
+        <label for="cp-default-car" class="form-label text-white">Default Car</label>
+        <select id="cp-default-car" class="form-select"
+                style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);"></select>
+      </div>
+      <div class="col-md-3">
+        <button id="btn-cp-save-default-car" class="btn btn-success w-100">Save Default Car</button>
+      </div>
+      <div class="col-md-3">
+        <span id="cp-default-car-result" class="text-muted"></span>
+      </div>
+    </div>
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-md-6">
+        <label for="cp-strategy" class="form-label text-white">Charging Strategy</label>
+        <select id="cp-strategy" class="form-select"
+                style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+          <option value="consecutive">Cheapest continuous block</option>
+          <option value="allow_pause">Cheapest quarters (allow pausing)</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <small class="text-muted d-block" style="line-height: 1.3;">
+          <strong>Continuous block:</strong> one uninterrupted charging session.<br>
+          <strong>Allow pausing:</strong> picks the cheapest 15-minute slots across the whole day and
+          pauses charging over any expensive slot in between &mdash; usually cheaper overall, at the cost
+          of possibly several separate start/stop windows.
+        </small>
+      </div>
+    </div>
+    <small class="text-muted d-block mt-2">
+      The cheapest charging plan is computed from stored Zonneplan 15-minute tariffs (UTC). The required
+      number of quarter-hour slots is ceil(kWh to load / (charging power &times; 0.25 kWh)).
+    </small>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Cars &mdash; Charging Schedule</div>
+  <div class="card-body p-0">
+    <div style="max-height:600px; overflow-y:auto;">
+      <table class="table table-striped table-sm mb-0" id="cp-table">
+        <thead class="sticky-top">
+          <tr>
+            <th>Current Time</th>
+            <th>License Plate</th>
+            <th>Car</th>
+            <th>Battery (kWh)</th>
+            <th>Left (%)</th>
+            <th>Left (kWh)</th>
+            <th>kWh to Load</th>
+            <th>Duration (h)</th>
+            <th>Start Charge</th>
+            <th>End Charge</th>
+            <th>Windows</th>
+            <th>Avg €/kWh</th>
+            <th>Est. Cost</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="cp-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule Smart Charge Modal -->
+<div class="modal fade" id="cpScheduleModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title">Schedule Smart Charge</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group mb-3">
+          <label for="cp-sched-car" class="form-label">Car</label>
+          <select class="form-select" id="cp-sched-car"
+                  style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);"></select>
+        </div>
+        <div class="form-group mb-3">
+          <label for="cp-sched-cp" class="form-label">Charge Point</label>
+          <select class="form-select" id="cp-sched-cp"
+                  style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);"></select>
+        </div>
+        <div class="form-group mb-3">
+          <label for="cp-sched-tag" class="form-label">ID Tag</label>
+          <select class="form-select" id="cp-sched-tag"
+                  style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            <option value="REMOTE">REMOTE</option>
+          </select>
+        </div>
+        <div class="form-group mb-3">
+          <label for="cp-sched-start" class="form-label">Start Date/Time</label>
+          <input type="datetime-local" class="form-control" id="cp-sched-start"
+                 style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+        </div>
+        <div class="form-group mb-3">
+          <label for="cp-sched-stop" class="form-label">Stop Date/Time</label>
+          <input type="datetime-local" class="form-control" id="cp-sched-stop"
+                 style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+        </div>
+        <div id="cp-sched-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-cp-sched-save">Schedule</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+var AMS_TZ = 'Europe/Amsterdam';
+
+function fmtAms(date) {
+  if (!date) return '-';
+  var d = (date instanceof Date) ? date : new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  var parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: AMS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(d);
+  var o = {};
+  parts.forEach(function(p) { o[p.type] = p.value; });
+  return o.year + '-' + o.month + '-' + o.day + ' ' + o.hour + ':' + o.minute;
+}
+
+function nowAms() {
+  return fmtAms(new Date());
+}
+
+var _cars = [];
+var _leftPctByCar = {};
+
+function renderEmptyRow(car) {
+  var leftPct = _leftPctByCar[car.id];
+  if (leftPct === undefined) leftPct = parseFloat($('#cp-default-left').val()) || 0;
+  var capacity = (car.battery_capacity_kwh != null) ? car.battery_capacity_kwh : '';
+  var disabled = (car.battery_capacity_kwh == null || Number(car.battery_capacity_kwh) <= 0);
+  return (
+    '<tr data-car-id="' + car.id + '">' +
+      '<td>' + escapeHtml(nowAms()) + '</td>' +
+      '<td>' + escapeHtml(car.license_plate || '-') + '</td>' +
+      '<td>' + escapeHtml((car.brand || '') + ' ' + (car.model || '')) + '</td>' +
+      '<td>' + escapeHtml(capacity) + '</td>' +
+      '<td>' +
+        '<input type="number" class="form-control form-control-sm cp-left-input" ' +
+        'min="0" max="100" step="1" value="' + leftPct + '" ' +
+        (disabled ? 'disabled ' : '') +
+        'style="width:80px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+      '</td>' +
+      '<td class="cp-left-kwh">-</td>' +
+      '<td class="cp-kwh-load">-</td>' +
+      '<td class="cp-hours">-</td>' +
+      '<td class="cp-start">-</td>' +
+      '<td class="cp-end">-</td>' +
+      '<td class="cp-windows">-</td>' +
+      '<td class="cp-avg">-</td>' +
+      '<td class="cp-cost">-</td>' +
+      '<td>' +
+        (disabled
+          ? ''
+          : '<button class="btn btn-sm btn-primary cp-compute-btn me-1">Compute</button>' +
+            '<button class="btn btn-sm btn-success cp-schedule-btn" disabled>Schedule</button>') +
+      '</td>' +
+    '</tr>'
+  );
+}
+
+function computeForCar(carId) {
+  var $row = $('tr[data-car-id="' + carId + '"]');
+  var leftPct = parseFloat($row.find('.cp-left-input').val());
+  if (isNaN(leftPct)) {
+    leftPct = parseFloat($('#cp-default-left').val()) || 0;
+  }
+  _leftPctByCar[carId] = leftPct;
+  var power = parseFloat($('#cp-power').val()) || 11;
+  var strategy = $('#cp-strategy').val() || 'consecutive';
+
+  $row.find('.cp-start').html('<span class="text-muted">computing...</span>');
+  $row.find('.cp-end, .cp-avg, .cp-cost, .cp-hours, .cp-kwh-load, .cp-left-kwh, .cp-windows').text('-');
+
+  $.getJSON('/api/charging-plan', {
+    car_id: carId,
+    battery_left_pct: leftPct,
+    charging_power_kw: power,
+    strategy: strategy
+  }).done(function(data) {
+    $row.find('td').eq(0).text(nowAms());
+    $row.find('.cp-left-kwh').text(data.battery_left_kwh != null ? data.battery_left_kwh : '-');
+    $row.find('.cp-kwh-load').text(data.kwh_to_load != null ? data.kwh_to_load : '-');
+    var plan = data.plan || {};
+    var windows = plan.windows || [];
+    $row.find('.cp-hours').text(plan.duration_hours != null ? plan.duration_hours : '-');
+    $row.find('.cp-start').text(plan.start_at ? fmtAms(plan.start_at) : (plan.warning || '-'));
+    $row.find('.cp-end').text(plan.end_at ? fmtAms(plan.end_at) : '-');
+    if (windows.length > 1) {
+      var summary = windows.map(function(w) {
+        return fmtAms(w.start_at).split(' ')[1] + '–' + fmtAms(w.end_at).split(' ')[1];
+      }).join(', ');
+      $row.find('.cp-windows').text(windows.length + ' segments: ' + summary);
+    } else {
+      $row.find('.cp-windows').text(windows.length === 1 ? '1 segment' : '-');
+    }
+    $row.find('.cp-avg').text(plan.avg_tariff_window != null ? '€ ' + plan.avg_tariff_window.toFixed(4) : '-');
+    $row.find('.cp-cost').text(plan.estimated_cost_eur != null ? '€ ' + plan.estimated_cost_eur.toFixed(2) : '-');
+    if (data.avg_tariff_forecast != null) {
+      $('#cp-avg-tariff').text('€ ' + data.avg_tariff_forecast.toFixed(4) + ' /kWh');
+    }
+    // Stash the computed plan + license on the row for the Schedule button.
+    var hasPlan = !!(plan.start_at && plan.end_at);
+    $row.data('plan-start', plan.start_at || null);
+    $row.data('plan-end', plan.end_at || null);
+    $row.data('plan-windows', windows);
+    $row.data('license-plate', data.license_plate || '');
+    $row.find('.cp-schedule-btn').prop('disabled', !hasPlan);
+  }).fail(function(xhr) {
+    var msg = (xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Failed to compute plan';
+    $row.find('.cp-start').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+  });
+}
+
+function refreshCars() {
+  $.getJSON('/api/cars', function(data) {
+    _cars = data || [];
+    var tb = $('#cp-body');
+    tb.empty();
+    if (!_cars.length) {
+      tb.append('<tr><td colspan="14" class="text-center text-muted">No cars configured.</td></tr>');
+      return;
+    }
+    _cars.forEach(function(c) {
+      tb.append(renderEmptyRow(c));
+    });
+    // Auto-compute for cars that have battery capacity set.
+    _cars.forEach(function(c) {
+      if (c.battery_capacity_kwh != null && Number(c.battery_capacity_kwh) > 0) {
+        computeForCar(c.id);
+      }
+    });
+  });
+}
+
+$(document).on('click', '.cp-compute-btn', function() {
+  var carId = $(this).closest('tr').data('car-id');
+  computeForCar(carId);
+});
+
+$(document).on('change input', '.cp-left-input', function() {
+  var carId = $(this).closest('tr').data('car-id');
+  // Debounce 'input' so we don't fire while user is still typing.
+  clearTimeout($(this).data('debounce'));
+  var t = setTimeout(function() { computeForCar(carId); }, 350);
+  $(this).data('debounce', t);
+});
+
+function toLocalInput(isoStr) {
+  if (!isoStr) return '';
+  try {
+    var d = new Date(isoStr);
+    var offset = d.getTimezoneOffset();
+    var local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
+  } catch (e) { return ''; }
+}
+
+function fromLocalInput(val) {
+  if (!val) return null;
+  try { return new Date(val).toISOString(); } catch (e) { return null; }
+}
+
+function autoSelectIdTag(licensePlate) {
+  if (!licensePlate) return;
+  var $tag = $('#cp-sched-tag');
+  $tag.find('option').each(function() {
+    var label = $(this).text();
+    if (label.indexOf(licensePlate) !== -1) {
+      $tag.val($(this).val());
+      return false;
+    }
+  });
+}
+
+function populateScheduleSelectors(licensePlate, callback) {
+  var $cp = $('#cp-sched-cp');
+  var $tag = $('#cp-sched-tag');
+  var $car = $('#cp-sched-car');
+  $cp.empty();
+  $tag.empty();
+  $car.empty();
+  // Populate cars from the cached list.
+  if (!_cars.length) {
+    $car.append('<option value="">(no cars)</option>');
+  } else {
+    _cars.forEach(function(c) {
+      var label = (c.brand || '') + ' ' + (c.model || '') + (c.license_plate ? ' (' + c.license_plate + ')' : '');
+      $car.append('<option value="' + c.id + '" data-plate="' + escapeHtml(c.license_plate || '') + '">' + escapeHtml(label) + '</option>');
+    });
+    // Preselect the car matching the licensePlate.
+    if (licensePlate) {
+      _cars.forEach(function(c) {
+        if (c.license_plate === licensePlate) {
+          $car.val(c.id);
+        }
+      });
+    }
+  }
+  $.when(
+    $.getJSON('/api/chargepoints'),
+    $.getJSON('/api/rfids')
+  ).done(function(cpResp, rfidResp) {
+    var cps = cpResp[0] || [];
+    if (!cps.length) {
+      $cp.append('<option value="">(no charge points)</option>');
+    } else {
+      cps.forEach(function(c) {
+        var label = c.cp_id + (c.online ? ' (online)' : ' (offline)');
+        $cp.append('<option value="' + escapeHtml(c.cp_id) + '">' + escapeHtml(label) + '</option>');
+      });
+    }
+    var rfids = rfidResp[0] || [];
+    if (rfids.length) {
+      rfids.forEach(function(r) {
+        var label = r.id_tag + (r.assigned_to ? ' (' + r.assigned_to + ')' : '');
+        $tag.append('<option value="' + escapeHtml(r.id_tag) + '">' + escapeHtml(label) + '</option>');
+      });
+    } else {
+      $tag.append('<option value="REMOTE">REMOTE</option>');
+    }
+    autoSelectIdTag(licensePlate);
+    if (callback) callback();
+  }).fail(function() {
+    if (callback) callback();
+  });
+}
+
+// Re-pick id-tag when the car selection changes.
+$(document).on('change', '#cp-sched-car', function() {
+  var plate = $(this).find('option:selected').data('plate') || '';
+  autoSelectIdTag(plate);
+});
+
+$(document).on('click', '.cp-schedule-btn', function() {
+  var $row = $(this).closest('tr');
+  var startIso = $row.data('plan-start');
+  var endIso = $row.data('plan-end');
+  var windows = $row.data('plan-windows') || [];
+  if (!startIso || !endIso) {
+    alert('No charging plan computed yet.');
+    return;
+  }
+  var licensePlate = $row.data('license-plate') || '';
+  var multi = windows.length > 1;
+  $('#cpScheduleModal').data('windows', multi ? windows : null);
+  $('#cp-sched-result').empty();
+  populateScheduleSelectors(licensePlate, function() {
+    $('#cp-sched-start').val(toLocalInput(startIso)).prop('disabled', multi);
+    $('#cp-sched-stop').val(toLocalInput(endIso)).prop('disabled', multi);
+    if (multi) {
+      var list = windows.map(function(w, i) {
+        return (i + 1) + '. ' + fmtAms(w.start_at) + ' → ' + fmtAms(w.end_at);
+      }).join('<br>');
+      $('#cp-sched-result').html(
+        '<div class="text-muted small">Allow-pause plan &mdash; ' + windows.length +
+        ' separate schedules will be created (charging pauses between them):<br>' + list + '</div>'
+      );
+    }
+    new bootstrap.Modal(document.getElementById('cpScheduleModal')).show();
+  });
+});
+
+$('#btn-cp-sched-save').on('click', function() {
+  var cpId = $('#cp-sched-cp').val();
+  var idTag = $('#cp-sched-tag').val();
+  var windows = $('#cpScheduleModal').data('windows');
+
+  if (!cpId || !idTag) {
+    $('#cp-sched-result').html('<span class="text-danger">All fields are required.</span>');
+    return;
+  }
+
+  if (windows && windows.length > 1) {
+    // Allow-pause plan: create one schedule per segment, using the computed
+    // times as-is (the start/stop inputs are disabled for multi-segment plans).
+    var requests = windows.map(function(w) {
+      return $.ajax({
+        url: '/api/smart-schedule',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ cp_id: cpId, id_tag: idTag, start_at: w.start_at, stop_at: w.end_at })
+      });
+    });
+    $.when.apply($, requests).done(function() {
+      bootstrap.Modal.getInstance(document.getElementById('cpScheduleModal')).hide();
+    }).fail(function(xhr) {
+      var msg = (xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Failed to schedule one or more segments.';
+      $('#cp-sched-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    });
+    return;
+  }
+
+  var startAt = fromLocalInput($('#cp-sched-start').val());
+  var stopAt = fromLocalInput($('#cp-sched-stop').val());
+  if (!startAt || !stopAt) {
+    $('#cp-sched-result').html('<span class="text-danger">All fields are required.</span>');
+    return;
+  }
+  if (new Date(stopAt) <= new Date(startAt)) {
+    $('#cp-sched-result').html('<span class="text-danger">Stop time must be after start time.</span>');
+    return;
+  }
+  $.ajax({
+    url: '/api/smart-schedule',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ cp_id: cpId, id_tag: idTag, start_at: startAt, stop_at: stopAt }),
+    success: function() {
+      bootstrap.Modal.getInstance(document.getElementById('cpScheduleModal')).hide();
+    },
+    error: function(xhr) {
+      var msg = (xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Failed to schedule.';
+      $('#cp-sched-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    }
+  });
+});
+
+$('#btn-cp-recompute').on('click', function() {
+  var def = parseFloat($('#cp-default-left').val());
+  if (isNaN(def)) def = 0;
+  // Apply the new default to every (enabled) row input and clear per-car cache,
+  // then recompute. This makes "Recompute All" actually re-apply the default.
+  _leftPctByCar = {};
+  $('#cp-table tbody .cp-left-input').not(':disabled').val(def);
+  _cars.forEach(function(c) {
+    if (c.battery_capacity_kwh != null && Number(c.battery_capacity_kwh) > 0) {
+      computeForCar(c.id);
+    }
+  });
+});
+
+// When the user edits the global default, propagate the new value to all rows
+// (so subsequent Recompute or per-row recompute uses it).
+$('#cp-default-left').on('change', function() {
+  var def = parseFloat($(this).val());
+  if (isNaN(def)) return;
+  $('#cp-table tbody .cp-left-input').not(':disabled').each(function() {
+    $(this).val(def);
+    var carId = $(this).closest('tr').data('car-id');
+    _leftPctByCar[carId] = def;
+  });
+});
+
+$(document).ready(function() {
+  // Load default charging power from per-CP charge values, then refresh.
+  $.getJSON('/api/charge-values/default-kw').done(function(data) {
+    if (data && data.default_kw != null) {
+      $('#cp-power').val(data.default_kw);
+    }
+  }).always(function() {
+    refreshCars();
+  });
+  loadDefaultCar();
+  // Refresh "current time" column every 30s.
+  setInterval(function() {
+    $('#cp-table tbody tr').each(function() {
+      $(this).find('td').eq(0).text(nowAms());
+    });
+  }, 30000);
+});
+
+function loadDefaultCar() {
+  $.when(
+    $.getJSON('/api/cars'),
+    $.getJSON('/api/app-settings')
+  ).done(function(carsResp, settingsResp) {
+    var cars = carsResp[0] || [];
+    var settings = settingsResp[0] || {};
+    var currentPlate = settings.default_car_license_plate || '';
+    var $sel = $('#cp-default-car');
+    $sel.empty();
+    $sel.append('<option value="">-- None --</option>');
+    cars.forEach(function(c) {
+      var label = (c.brand || '') + ' ' + (c.model || '') + (c.license_plate ? ' (' + c.license_plate + ')' : '');
+      $sel.append('<option value="' + escapeHtml(c.license_plate || '') + '">' + escapeHtml(label) + '</option>');
+    });
+    if (currentPlate) {
+      $sel.val(currentPlate);
+      if ($sel.val() !== currentPlate) {
+        $sel.append('<option value="' + escapeHtml(currentPlate) + '" selected>' + escapeHtml(currentPlate) + ' (not in car list)</option>');
+        $sel.val(currentPlate);
+      }
+    }
+  });
+}
+
+$('#btn-cp-save-default-car').on('click', function() {
+  var plate = $('#cp-default-car').val() || '';
+  $.ajax({
+    url: '/api/app-settings',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ default_car_license_plate: plate }),
+    success: function() {
+      $('#cp-default-car-result').removeClass('text-danger').addClass('text-success').text('Saved.');
+      setTimeout(function() { $('#cp-default-car-result').text(''); }, 3000);
+    },
+    error: function() {
+      $('#cp-default-car-result').removeClass('text-success').addClass('text-danger').text('Failed to save.');
+    }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,1539 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ system_name }} - OCPP Proxy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/proxy_style.css') }}?v=2">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+<div class="dashboard-container">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <svg class="brand-logo" viewBox="0 0 220 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cyb0rg42 Charging">
+        <defs>
+          <linearGradient id="cybHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#06b6d4"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <polygon points="30,2 56,17 56,47 30,62 4,47 4,17" fill="#151a2e" stroke="url(#cybHexGrad)" stroke-width="2.5"/>
+        <polygon points="34,10 19,34 27,34 23,54 41,27 32,27" fill="#f59e0b"/>
+        <circle cx="30" cy="2" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="17" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="30" cy="62" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="17" r="2.2" fill="#06b6d4"/>
+        <text x="70" y="30" font-family="'Courier New', Consolas, monospace" font-size="22" font-weight="700" fill="#ffffff">Cyb0rg42</text>
+        <text x="70" y="49" font-family="'Courier New', Consolas, monospace" font-size="11" font-weight="700" fill="#06b6d4" letter-spacing="3">CHARGING</text>
+      </svg>
+      <hr class="logo-divider">
+      <span class="logo-subtext">OCPP Proxy</span>
+      <hr class="logo-divider">
+    </div>
+    <nav class="nav-menu">
+      <h3 class="nav-section-title">Overview</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" href="/">
+          <span class="nav-icon">🏠</span><span class="nav-label">Home</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Monitoring</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item active" onclick="showTab('live')" id="nav-live">
+          <span class="nav-icon">📡</span><span class="nav-label">Events</span>
+        </a></li>
+        <li><a class="nav-item" onclick="showTab('events')" id="nav-events">
+          <span class="nav-icon">📋</span><span class="nav-label">Event Log</span>
+        </a></li>
+        <li><a class="nav-item" onclick="showTab('stats')" id="nav-stats">
+          <span class="nav-icon">📊</span><span class="nav-label">Statistics</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Control</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" onclick="showTab('blocking')" id="nav-blocking">
+          <span class="nav-icon">🚫</span><span class="nav-label">Command Blocking</span>
+        </a></li>
+        <li><a class="nav-item" onclick="showTab('overrides')" id="nav-overrides">
+          <span class="nav-icon">✏️</span><span class="nav-label">Boot Overrides</span>
+        </a></li>
+        <li><a class="nav-item" onclick="showTab('connector')" id="nav-connector">
+          <span class="nav-icon">🔌</span><span class="nav-label">Connector Control</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Configuration</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" onclick="showTab('settings')" id="nav-settings">
+          <span class="nav-icon">⚙️</span><span class="nav-label">Proxy Settings</span>
+        </a></li>
+        <li><a class="nav-item" onclick="showTab('equipment')" id="nav-equipment">
+          <span class="nav-icon">🏭</span><span class="nav-label">Equipment Database</span>
+        </a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version">OCPP Proxy v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <header class="top-header">
+      <div class="header-left">
+        <h1 class="page-title" id="page-title">Events</h1>
+      </div>
+      <div class="header-right">
+        <span class="client-count" id="client-count">0 clients</span>
+        <div class="status-badge" id="ws-status">
+          <span class="status-dot" id="ws-dot"></span>
+          <span class="status-text" id="ws-text">Connecting…</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="dashboard-content">
+
+      <!-- ═══════ TAB: Events (paired request/response) ═══════ -->
+      <div class="tab-panel active" id="panel-live">
+        <div class="filter-bar">
+          <select id="filter-cp" onchange="applyFilters()">
+            <option value="">All Charge Points</option>
+          </select>
+          <select id="filter-direction" onchange="applyFilters()">
+            <option value="">All Directions</option>
+            <option value="CP→CS">CP → CS</option>
+            <option value="CS→CP">CS → CP</option>
+            <option value="BLOCKED">Blocked</option>
+          </select>
+          <input type="text" id="filter-action" placeholder="Filter action…" oninput="applyFilters()">
+          <label class="autoscroll-label">
+            <label class="toggle">
+              <input type="checkbox" id="autoscroll" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            Auto-scroll
+          </label>
+          <button class="btn btn-sm btn-danger" onclick="clearMessages()">Clear</button>
+        </div>
+
+        <div class="card" style="padding: 0;">
+          <div class="message-log" id="message-log">
+            <div class="msg-row msg-header">
+              <span>Timestamp</span><span>Source</span><span>→</span><span>Target</span>
+              <span>Action</span><span>Status</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Request/Response Detail Modal -->
+        <div style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;" id="msg-modal-overlay">
+          <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; max-width:800px; width:90%; max-height:80vh; overflow-y:auto; padding:24px; position:relative;">
+            <button onclick="closeMsgModal()" style="position:absolute; top:12px; right:16px; background:none; border:none; color:var(--text-primary); font-size:20px; cursor:pointer;">&times;</button>
+            <h3 style="margin-top:0;">OCPP Message Details</h3>
+            <div style="margin-bottom:12px;">
+              <strong>Charge Point:</strong> <span id="msg-modal-cp"></span> &nbsp;
+              <strong>Action:</strong> <span id="msg-modal-action"></span> &nbsp;
+              <strong>Direction:</strong> <span id="msg-modal-dir"></span> &nbsp;
+              <strong>Time:</strong> <span id="msg-modal-ts"></span>
+            </div>
+            <h4 style="color:var(--accent-blue);">Request</h4>
+            <pre id="msg-modal-request" style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:4px; padding:12px; max-height:250px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:13px;"></pre>
+            <h4 style="color:var(--accent-blue);">Response</h4>
+            <pre id="msg-modal-response" style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:4px; padding:12px; max-height:250px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:13px;"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Events ═══════ -->
+      <div class="tab-panel" id="panel-events">
+        <div class="filter-bar">
+          <input type="text" id="ev-search" placeholder="Search events…" style="flex:0.5; min-width:200px;">
+          <select id="ev-ocpp-filter" style="min-width:180px;">
+            <option value="">All Commands</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="loadEvents()">Refresh</button>
+          <button class="btn btn-sm btn-danger" onclick="clearEventFilters()">Clear</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <table class="data-table" id="events-table">
+            <thead>
+              <tr><th>Timestamp</th><th>Charger</th><th>Direction</th><th>Backend</th><th>OCPP CMD</th><th>Message</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="no-events" style="display:none; text-align:center; padding:20px; color:var(--text-secondary);">No events found.</p>
+
+        <!-- OCPP Payload Modal -->
+        <div style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;" id="ev-modal-overlay">
+          <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; max-width:800px; width:90%; max-height:80vh; overflow-y:auto; padding:24px; position:relative;">
+            <button onclick="closeEventModal()" style="position:absolute; top:12px; right:16px; background:none; border:none; color:var(--text-primary); font-size:20px; cursor:pointer;">&times;</button>
+            <h3 style="margin-top:0;">OCPP Message Details</h3>
+            <div style="margin-bottom:12px;">
+              <strong>Charge Point:</strong> <span id="ev-modal-cp"></span> &nbsp;
+              <strong>Command:</strong> <span id="ev-modal-cmd"></span> &nbsp;
+              <strong>Direction:</strong> <span id="ev-modal-dir"></span> &nbsp;
+              <strong>Backend:</strong> <span id="ev-modal-backend"></span> &nbsp;
+              <strong>Time:</strong> <span id="ev-modal-ts"></span>
+            </div>
+            <h4 style="color:var(--accent-blue);">Request</h4>
+            <pre id="ev-modal-request" style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:4px; padding:12px; max-height:250px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:13px;"></pre>
+            <h4 style="color:var(--accent-blue);">Response</h4>
+            <pre id="ev-modal-response" style="background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:4px; padding:12px; max-height:250px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:13px;"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Statistics ═══════ -->
+      <div class="tab-panel" id="panel-stats">
+        <div class="stat-row" id="stat-cards"></div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Command Usage</span>
+            <button class="btn btn-sm btn-primary" onclick="loadStats()">Refresh</button>
+          </div>
+          <table class="data-table" id="stats-table">
+            <thead>
+              <tr><th>Command</th><th>Direction</th><th>Total</th><th>Blocked</th><th>Last Seen</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Blocking ═══════ -->
+      <div class="tab-panel" id="panel-blocking">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Block OCPP Commands</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Command</label>
+              <select id="block-command"></select>
+            </div>
+            <div class="form-group">
+              <label>Charge Point (optional)</label>
+              <select id="block-cp">
+                <option value="*">All (* wildcard)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Target CSMS</label>
+              <select id="block-backends" multiple size="3" style="min-width:160px;"></select>
+              <small style="color:var(--text-secondary);">None selected = all CSMS</small>
+            </div>
+            <div class="form-group">
+              <label>Reason</label>
+              <input type="text" id="block-reason" placeholder="Optional reason…">
+            </div>
+            <button class="btn btn-danger" onclick="blockCommand()">Block Command</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Active Blocking Rules</span>
+          </div>
+          <table class="data-table" id="blocked-table">
+            <thead>
+              <tr><th>Command</th><th>Charge Point</th><th>Target CSMS</th><th>Reason</th><th>Since</th><th>Action</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty-state" id="blocked-empty" style="display:none;">No commands are currently blocked</div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Boot Overrides ═══════ -->
+      <div class="tab-panel" id="panel-overrides">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">BootNotification Field Overrides</span>
+          </div>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+            Modify Vendor, Model, Serial Number, Firmware Version and Meter Type fields on-the-fly
+            for specific charge points. Select from the equipment database or type a custom value.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Charge Point ID</label>
+              <select id="ovr-cp">
+                <option value="">— Select client —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Vendor</label>
+              <select id="ovr-vendor" onchange="onOvrVendorChange()">
+                <option value="">— Select vendor —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model</label>
+              <select id="ovr-model">
+                <option value="">— Select vendor first —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Serial Number</label>
+              <input type="text" id="ovr-serial" placeholder="e.g. SN-12345">
+            </div>
+            <div class="form-group">
+              <label>Firmware Version</label>
+              <input type="text" id="ovr-firmware" placeholder="e.g. 2.1.0">
+            </div>
+            <div class="form-group">
+              <label>Meter Type</label>
+              <select id="ovr-meter">
+                <option value="">— Select meter type —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Target CSMS</label>
+              <select id="ovr-backends" multiple size="3" style="min-width:160px;"></select>
+              <small style="color:var(--text-secondary);">None selected = all CSMS</small>
+            </div>
+            <button class="btn btn-primary" onclick="saveOverride()">Save Override</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Active Overrides</span>
+          </div>
+          <div id="overrides-list"></div>
+          <div class="empty-state" id="overrides-empty" style="display:none;">No boot overrides configured</div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Proxy Settings ═══════ -->
+      <div class="tab-panel" id="panel-settings">
+
+        <!-- Listen Port -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">WebSocket Listen Port</span>
+          </div>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;">
+            The port charge points connect to. Changing the port will close all active
+            connections and re-open the listener on the new port.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Port (1024 – 65535)</label>
+              <input type="number" id="cfg-port" min="1024" max="65535" style="width:140px;">
+            </div>
+            <button class="btn btn-primary" onclick="cfgSavePort()">Apply &amp; Restart</button>
+          </div>
+          <div id="cfg-port-status" style="margin-top:8px;font-size:12px;"></div>
+        </div>
+
+        <!-- Backend Servers -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Backend Central Systems</span>
+            <span style="color:var(--text-secondary);font-size:12px;margin-left:auto;">Max 3 backends</span>
+          </div>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;">
+            OCPP messages from charge points are forwarded to all enabled backends.
+            Changing backends will disconnect and reconnect all charge points.
+          </p>
+          <div id="cfg-backend-list"></div>
+          <div id="cfg-backend-add" style="margin-top:12px;">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="cfg-new-be-name" placeholder="e.g. Production CS">
+              </div>
+              <div class="form-group">
+                <label>WebSocket URL</label>
+                <input type="text" id="cfg-new-be-url" placeholder="ws://host:port/ocpp" style="min-width:280px;">
+              </div>
+              <button class="btn btn-primary" onclick="cfgAddBackend()">Add Backend</button>
+            </div>
+          </div>
+          <div id="cfg-backend-status" style="margin-top:8px;font-size:12px;"></div>
+        </div>
+
+      </div>
+
+      <!-- ═══════ TAB: Equipment Database ═══════ -->
+      <div class="tab-panel" id="panel-equipment">
+        <!-- Vendors + Models -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Vendors &amp; Models</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>New Vendor Name</label>
+              <input type="text" id="eq-new-vendor" placeholder="e.g. Wallbox">
+            </div>
+            <button class="btn btn-primary" onclick="eqAddVendor()">Add Vendor</button>
+          </div>
+          <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <!-- Vendor list -->
+            <div style="flex:1; min-width:250px;">
+              <h4 style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">VENDORS</h4>
+              <div id="eq-vendor-list" style="max-height:400px; overflow-y:auto;"></div>
+            </div>
+            <!-- Models for selected vendor -->
+            <div style="flex:2; min-width:300px;">
+              <h4 style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">
+                MODELS <span id="eq-models-vendor-label" style="color:var(--accent-cyan);"></span>
+              </h4>
+              <div class="form-row" id="eq-model-add-row" style="display:none;">
+                <div class="form-group">
+                  <label>New Model Name</label>
+                  <input type="text" id="eq-new-model" placeholder="e.g. Pulsar Plus">
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="eqAddModel()">Add Model</button>
+              </div>
+              <div id="eq-model-list" style="max-height:350px; overflow-y:auto;"></div>
+              <div class="empty-state" id="eq-model-empty">Select a vendor to see models</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Meter Types -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Meter Types</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>New Meter Type</label>
+              <input type="text" id="eq-new-meter" placeholder="e.g. DC_COMBO">
+            </div>
+            <button class="btn btn-primary" onclick="eqAddMeterType()">Add Meter Type</button>
+          </div>
+          <div id="eq-meter-list" style="max-height:300px; overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- ═══════ TAB: Connector Control ═══════ -->
+      <div class="tab-panel" id="panel-connector">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Change Connector Availability</span>
+          </div>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+            Send an OCPP <strong>ChangeAvailability</strong> command to a connected charge station.
+            Connector 0 applies to the entire charge point.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Charge Station</label>
+              <select id="ca-cp" onchange="onCaCpChange()">
+                <option value="">— Select station —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Connector ID</label>
+              <select id="ca-connector">
+                <option value="0">0 — Entire charge point</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="ca-type">
+                <option value="Available">Available</option>
+                <option value="Preparing">Preparing</option>
+                <option value="Charging">Charging</option>
+                <option value="SuspendedEVSE">SuspendedEVSE</option>
+                <option value="SuspendedEV">SuspendedEV</option>
+                <option value="Finishing">Finishing</option>
+                <option value="Reserved">Reserved</option>
+                <option value="Unavailable">Unavailable</option>
+                <option value="Faulted">Faulted</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Target CSMS</label>
+              <select id="ca-backends" multiple size="3" style="min-width:160px;"></select>
+              <small style="color:var(--text-secondary);">None selected = all CSMS</small>
+            </div>
+            <button class="btn btn-primary" onclick="sendChangeAvailability()">Send Command</button>
+          </div>
+          <div id="ca-status" style="margin-top:12px;font-size:13px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Command History</span>
+          </div>
+          <table class="data-table" id="ca-history-table">
+            <thead>
+              <tr><th>Time</th><th>Station</th><th>Connector</th><th>Status</th><th>Target CSMS</th><th>Result</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty-state" id="ca-history-empty">No commands sent yet</div>
+        </div>
+      </div>
+
+    </div><!-- /dashboard-content -->
+  </main>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  Socket.IO real-time connection
+// ═══════════════════════════════════════════════════════════════
+const socket = io('/proxy', { transports: ['websocket', 'polling'] });
+
+socket.on('connect', () => {
+  document.getElementById('ws-dot').style.backgroundColor = 'var(--accent-green)';
+  document.getElementById('ws-text').textContent = 'Connected';
+});
+socket.on('disconnect', () => {
+  document.getElementById('ws-dot').style.backgroundColor = 'var(--accent-red)';
+  document.getElementById('ws-text').textContent = 'Disconnected';
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Tab navigation
+// ═══════════════════════════════════════════════════════════════
+const tabTitles = { live: 'Events', events: 'Event Log', stats: 'Statistics', blocking: 'Command Blocking', overrides: 'Boot Overrides', connector: 'Connector Control', settings: 'Proxy Settings', equipment: 'Equipment Database' };
+
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  document.getElementById('page-title').textContent = tabTitles[name] || name;
+  if (name === 'stats') loadStats();
+  if (name === 'blocking') loadBlocked();
+  if (name === 'overrides') loadOverrides();
+  if (name === 'equipment') loadEquipment();
+  if (name === 'settings') loadSettings();
+  if (name === 'connector') loadConnectorTab();
+  if (name === 'events') { loadOcppCommandFilter(); loadEvents(); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Events
+// ═══════════════════════════════════════════════════════════════
+let _ocppFilterLoaded = false;
+
+function loadOcppCommandFilter() {
+  if (_ocppFilterLoaded) return;
+  _ocppFilterLoaded = true;
+  fetch('/api/ocpp-commands').then(r => r.json()).then(cmds => {
+    const sel = document.getElementById('ev-ocpp-filter');
+    (cmds || []).forEach(c => {
+      if (c.ocpp_command) {
+        const opt = document.createElement('option');
+        opt.value = c.ocpp_command;
+        opt.textContent = c.ocpp_command + ' (' + c.count + ')';
+        sel.appendChild(opt);
+      }
+    });
+  });
+}
+
+function loadEvents() {
+  const q = document.getElementById('ev-search').value.trim();
+  const cmd = document.getElementById('ev-ocpp-filter').value;
+  const params = [];
+  if (q) params.push('q=' + encodeURIComponent(q));
+  if (cmd) params.push('ocpp_command=' + encodeURIComponent(cmd));
+  const url = '/api/events' + (params.length ? '?' + params.join('&') : '');
+  fetch(url).then(r => r.json()).then(evts => {
+    const tb = document.querySelector('#events-table tbody');
+    tb.innerHTML = '';
+    const noMsg = document.getElementById('no-events');
+    if (!evts || evts.length === 0) { noMsg.style.display = 'block'; return; }
+    noMsg.style.display = 'none';
+    evts.forEach(ev => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML =
+        '<td>' + (ev.timestamp ? (function(d){var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),s=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+s})(ev.timestamp) : '') + '</td>' +
+        '<td>' + escHtml(ev.cp_id || '-') + '</td>' +
+        '<td>' + escHtml(ev.direction || '-') + '</td>' +
+        '<td>' + escHtml(ev.backend_name || '-') + '</td>' +
+        '<td><span style="background:var(--accent-blue);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">' + escHtml(ev.ocpp_command || '') + '</span></td>' +
+        '<td>' + escHtml(ev.message || '') + '</td>';
+      tr.onclick = () => showEventModal(ev);
+      tb.appendChild(tr);
+    });
+  });
+}
+
+document.getElementById('ev-search').addEventListener('keypress', e => { if (e.key === 'Enter') loadEvents(); });
+document.getElementById('ev-ocpp-filter').addEventListener('change', () => loadEvents());
+
+function clearEventFilters() {
+  document.getElementById('ev-search').value = '';
+  document.getElementById('ev-ocpp-filter').value = '';
+  loadEvents();
+}
+
+function formatJsonPretty(raw) {
+  if (!raw) return null;
+  try { return JSON.stringify(JSON.parse(raw), null, 2); }
+  catch(e) { return raw; }
+}
+
+function showEventModal(ev) {
+  document.getElementById('ev-modal-cp').textContent = ev.cp_id || '-';
+  document.getElementById('ev-modal-cmd').textContent = ev.ocpp_command || '-';
+  document.getElementById('ev-modal-dir').textContent = ev.direction || '-';
+  document.getElementById('ev-modal-backend').textContent = ev.backend_name || '-';
+  document.getElementById('ev-modal-ts').textContent = ev.timestamp ? (function(d){var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),s=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+s})(ev.timestamp) : '-';
+  document.getElementById('ev-modal-request').textContent = formatJsonPretty(ev.ocpp_payload) || 'No request payload available.';
+  document.getElementById('ev-modal-response').textContent = formatJsonPretty(ev.ocpp_response) || 'No response payload available.';
+  document.getElementById('ev-modal-overlay').style.display = 'flex';
+}
+
+function closeEventModal() {
+  document.getElementById('ev-modal-overlay').style.display = 'none';
+}
+
+document.getElementById('ev-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeEventModal();
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Live Events (paired request/response)
+// ═══════════════════════════════════════════════════════════════
+const MAX_EVENTS = 500;
+const CALL = 2, CALL_RESULT = 3, CALL_ERROR = 4;
+const PAIR_TIMEOUT_MS = 30000; // show unpaired Call after 30s
+const pendingCalls = new Map(); // unique_id → { msg, rowEl, timer }
+let eventCount = 0;
+
+function formatTs(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+function statusBadge(ev) {
+  if (ev.blocked) return '<span class="badge badge-blocked">BLOCKED</span>';
+  if (ev.error) return '<span class="badge badge-error">ERROR</span>';
+  if (ev.response) return '<span class="badge badge-ok">OK</span>';
+  return '<span class="badge badge-pending">PENDING</span>';
+}
+
+function dirLabel(ev) {
+  if (ev.blocked) return 'BLOCKED';
+  return ev.direction || '';
+}
+
+function dirClass(dir) {
+  if (!dir) return '';
+  if (dir.includes('BLOCKED')) return 'blocked-dir';
+  if (dir.includes('CP')) return 'cp-to-cs';
+  return 'cs-to-cp';
+}
+
+function renderEventRow(ev) {
+  const row = document.createElement('div');
+  row.className = 'msg-row' + (ev.blocked ? ' blocked' : '') + (ev.modified ? ' modified' : '');
+  row.dataset.cp = ev.cp_id || '';
+  row.dataset.dir = ev.direction || '';
+  row.dataset.action = (ev.action || '').toLowerCase();
+  row.style.cursor = 'pointer';
+  const source = ev.source || ev.cp_id || '';
+  const target = ev.target || '';
+  const arrow = ev.blocked ? '✕' : '→';
+  row.innerHTML =
+    `<span class="msg-ts">${formatTs(ev.timestamp)}</span>` +
+    `<span class="msg-cp">${escHtml(source)}</span>` +
+    `<span class="msg-dir ${dirClass(ev.direction || '')}">${arrow}</span>` +
+    `<span class="msg-target" title="${escHtml(target)}">${escHtml(target)}</span>` +
+    `<span class="msg-action">${escHtml(ev.action || '')}</span>` +
+    `<span class="msg-status">${statusBadge(ev)}</span>`;
+  row.addEventListener('click', () => showMsgModal(ev));
+  return row;
+}
+
+function showMsgModal(ev) {
+  document.getElementById('msg-modal-cp').textContent = ev.cp_id || '-';
+  document.getElementById('msg-modal-action').textContent = ev.action || '-';
+  document.getElementById('msg-modal-dir').textContent = dirLabel(ev);
+  document.getElementById('msg-modal-ts').textContent = ev.timestamp ? (function(d){var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),s=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+s})(ev.timestamp) : '-';
+  const reqJson = ev.request ? formatJsonPretty(typeof ev.request === 'string' ? ev.request : JSON.stringify(ev.request)) : 'No request payload.';
+  const resJson = ev.response ? formatJsonPretty(typeof ev.response === 'string' ? ev.response : JSON.stringify(ev.response)) : 'Awaiting response…';
+  document.getElementById('msg-modal-request').textContent = reqJson;
+  document.getElementById('msg-modal-response').textContent = resJson;
+  document.getElementById('msg-modal-overlay').style.display = 'flex';
+}
+
+function closeMsgModal() {
+  document.getElementById('msg-modal-overlay').style.display = 'none';
+}
+document.getElementById('msg-modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeMsgModal();
+});
+
+function addEventRow(ev) {
+  const log = document.getElementById('message-log');
+  const header = log.querySelector('.msg-header');
+  const row = renderEventRow(ev);
+  header.insertAdjacentElement('afterend', row);
+  eventCount++;
+  trimEvents();
+  applyFilters();
+  if (document.getElementById('autoscroll').checked) log.scrollTop = 0;
+  return row;
+}
+
+function trimEvents() {
+  const log = document.getElementById('message-log');
+  const rows = log.querySelectorAll('.msg-row:not(.msg-header)');
+  while (rows.length > MAX_EVENTS) {
+    rows[rows.length - 1].remove();
+  }
+}
+
+function applyFilters() {
+  const cp = document.getElementById('filter-cp').value;
+  const dir = document.getElementById('filter-direction').value;
+  const act = document.getElementById('filter-action').value.toLowerCase();
+  document.querySelectorAll('#message-log .msg-row:not(.msg-header)').forEach(row => {
+    let show = true;
+    if (cp && row.dataset.cp !== cp) show = false;
+    if (dir && !row.dataset.dir.includes(dir)) show = false;
+    if (act && !row.dataset.action.includes(act)) show = false;
+    row.style.display = show ? '' : 'none';
+  });
+}
+
+function clearMessages() {
+  pendingCalls.forEach(p => clearTimeout(p.timer));
+  pendingCalls.clear();
+  eventCount = 0;
+  const log = document.getElementById('message-log');
+  log.querySelectorAll('.msg-row:not(.msg-header)').forEach(r => r.remove());
+}
+
+socket.on('ocpp_message', (msg) => {
+  // Skip Heartbeat
+  if (msg.action === 'Heartbeat') return;
+
+  const uid = msg.unique_id;
+  const typeId = msg.msg_type_id;
+
+  updateCpFilter(msg.cp_id);
+
+  // CALL (request) – buffer for pairing
+  if (typeId === CALL && uid) {
+    const ev = {
+      cp_id: msg.cp_id,
+      source: msg.source || msg.cp_id || '',
+      target: msg.target || '',
+      direction: msg.direction || '',
+      action: msg.action || '',
+      timestamp: msg.timestamp,
+      blocked: msg.blocked,
+      modified: msg.modified,
+      request: msg.payload,
+      response: null,
+      error: false
+    };
+    // If blocked, show immediately (no response expected)
+    if (msg.blocked) {
+      addEventRow(ev);
+      return;
+    }
+    const rowEl = addEventRow(ev);
+    const timer = setTimeout(() => {
+      // Show as timed-out pending
+      pendingCalls.delete(uid);
+    }, PAIR_TIMEOUT_MS);
+    pendingCalls.set(uid, { ev, rowEl, timer });
+    return;
+  }
+
+  // CALL_RESULT or CALL_ERROR (response) – pair with pending Call
+  if ((typeId === CALL_RESULT || typeId === CALL_ERROR) && uid && pendingCalls.has(uid)) {
+    const pending = pendingCalls.get(uid);
+    clearTimeout(pending.timer);
+    pendingCalls.delete(uid);
+    pending.ev.response = msg.payload;
+    pending.ev.error = (typeId === CALL_ERROR);
+    // Re-render the row in-place
+    const newRow = renderEventRow(pending.ev);
+    pending.rowEl.replaceWith(newRow);
+    applyFilters();
+    return;
+  }
+
+  // Fallback: unpaired response or no unique_id – show as standalone
+  const ev = {
+    cp_id: msg.cp_id,
+    source: msg.source || msg.cp_id || '',
+    target: msg.target || '',
+    direction: msg.direction || '',
+    action: msg.action || (typeId === CALL_RESULT ? 'Response' : typeId === CALL_ERROR ? 'Error' : ''),
+    timestamp: msg.timestamp,
+    blocked: msg.blocked,
+    modified: msg.modified,
+    request: typeId === CALL ? msg.payload : null,
+    response: typeId !== CALL ? msg.payload : null,
+    error: typeId === CALL_ERROR
+  };
+  addEventRow(ev);
+});
+
+const knownCps = new Set();
+function updateCpFilter(cpId) {
+  if (!cpId || knownCps.has(cpId)) return;
+  knownCps.add(cpId);
+  const opt = document.createElement('option');
+  opt.value = cpId;
+  opt.textContent = cpId;
+  document.getElementById('filter-cp').appendChild(opt);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Connected clients
+// ═══════════════════════════════════════════════════════════════
+function _handleConnectionsUpdate(data) {
+  const clients = data.clients || [];
+  document.getElementById('client-count').textContent = clients.length + ' client' + (clients.length !== 1 ? 's' : '');
+
+  const list = document.getElementById('client-list');
+  if (list) {
+    list.innerHTML = '';
+    if (clients.length === 0) {
+      list.innerHTML = '<li class="empty-state" style="font-size:12px;padding:10px;">No clients connected</li>';
+    } else {
+      clients.forEach(cp => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="nav-item" style="cursor:default"><span class="nav-icon">🔋</span><span class="nav-label">${escHtml(cp)}</span><span class="badge badge-active">online</span></span>`;
+        list.appendChild(li);
+      });
+    }
+  }
+  clients.forEach(cp => updateCpFilter(cp));
+
+  // Update CP selects in blocking & overrides tabs
+  updateSelectClients('block-cp', clients);
+  updateSelectClients('ovr-cp', clients);
+}
+
+socket.on('connections_update', (data) => _handleConnectionsUpdate(data));
+
+function updateSelectClients(selectId, clients) {
+  const sel = document.getElementById(selectId);
+  const current = sel.value;
+  // Keep first option (wildcard or placeholder)
+  while (sel.options.length > 1) sel.remove(1);
+  clients.forEach(cp => {
+    const opt = document.createElement('option');
+    opt.value = cp;
+    opt.textContent = cp;
+    sel.appendChild(opt);
+  });
+  sel.value = current;
+}
+
+socket.on('client_event', (data) => {
+  // Visual feedback: flash a message in the log
+  const msg = {
+    timestamp: new Date().toISOString(),
+    cp_id: data.cp_id,
+    direction: data.event === 'connected' ? 'CONNECT' : 'DISCONNECT',
+    type: 'Event',
+    action: data.event,
+    payload: '',
+    blocked: false,
+    modified: false,
+  };
+  socket.emit('ocpp_message', msg); // won't actually go anywhere, just local display
+  const log = document.getElementById('message-log');
+  log.appendChild(renderMessage(msg));
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  Statistics
+// ═══════════════════════════════════════════════════════════════
+async function loadStats() {
+  const resp = await fetch('/api/stats');
+  const data = await resp.json();
+  const stats = data.stats || [];
+
+  let totalMsgs = 0, totalBlocked = 0, uniqueActions = new Set();
+  stats.forEach(s => {
+    totalMsgs += s.total;
+    totalBlocked += s.total_blocked;
+    uniqueActions.add(s.command);
+  });
+
+  document.getElementById('stat-cards').innerHTML =
+    statCard(totalMsgs, 'Total Messages', '--accent-cyan') +
+    statCard(totalBlocked, 'Blocked', '--accent-red') +
+    statCard(uniqueActions.size, 'Unique Actions', '--accent-yellow') +
+    statCard(stats.length, 'Command/Direction Pairs', '--accent-purple');
+
+  const tbody = document.querySelector('#stats-table tbody');
+  tbody.innerHTML = '';
+  stats.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escHtml(s.command)}</td><td>${escHtml(s.direction)}</td>` +
+      `<td>${s.total}</td><td>${s.total_blocked > 0 ? '<span class="badge badge-blocked">' + s.total_blocked + '</span>' : '0'}</td>` +
+      `<td style="color:var(--text-secondary)">${formatTs(s.last_seen)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function statCard(value, label, color) {
+  return `<div class="stat-card"><div class="stat-value" style="color:var(${color})">${value}</div><div class="stat-label">${label}</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Blocking rules
+// ═══════════════════════════════════════════════════════════════
+async function _populateBackendSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const backends = (await fetch('/api/backends').then(r => r.json())).backends || [];
+    const prev = new Set(Array.from(sel.selectedOptions).map(o => o.value));
+    sel.innerHTML = '';
+    backends.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.name; opt.textContent = b.name + (b.enabled ? '' : ' (disabled)');
+      if (prev.has(b.name)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function _selectedBackends(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return '*';
+  const vals = Array.from(sel.selectedOptions).map(o => o.value);
+  return vals.length ? vals : '*';
+}
+
+async function loadBlocked() {
+  const [blockedResp, actionsResp] = await Promise.all([
+    fetch('/api/blocked'),
+    fetch('/api/ocpp-actions'),
+  ]);
+  const blocked = (await blockedResp.json()).blocked || [];
+  const actions = (await actionsResp.json()).actions || [];
+
+  _populateBackendSelect('block-backends');
+
+  // Populate command select
+  const sel = document.getElementById('block-command');
+  sel.innerHTML = '';
+  actions.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a; opt.textContent = a;
+    sel.appendChild(opt);
+  });
+
+  // Render table
+  const tbody = document.querySelector('#blocked-table tbody');
+  tbody.innerHTML = '';
+  document.getElementById('blocked-empty').style.display = blocked.length ? 'none' : 'block';
+  blocked.forEach(b => {
+    const targets = (!b.backends || b.backends === '*') ? 'All' : escHtml(b.backends);
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td><span class="badge badge-blocked">${escHtml(b.command)}</span></td>` +
+      `<td>${escHtml(b.cp_id)}</td>` +
+      `<td>${targets}</td>` +
+      `<td style="color:var(--text-secondary)">${escHtml(b.reason || '—')}</td>` +
+      `<td style="color:var(--text-secondary)">${b.created_at || ''}</td>` +
+      `<td><button class="btn btn-sm btn-success" onclick="unblockCommand('${escAttr(b.command)}','${escAttr(b.cp_id)}')">Unblock</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function blockCommand() {
+  const command = document.getElementById('block-command').value;
+  const cp_id = document.getElementById('block-cp').value;
+  const reason = document.getElementById('block-reason').value;
+  const backends = _selectedBackends('block-backends');
+  if (!command) return;
+  await fetch('/api/blocked', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, cp_id, reason, backends }),
+  });
+  document.getElementById('block-reason').value = '';
+  loadBlocked();
+}
+
+async function unblockCommand(command, cpId) {
+  await fetch('/api/blocked', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, cp_id: cpId }),
+  });
+  loadBlocked();
+}
+
+socket.on('blocked_update', () => loadBlocked());
+
+// ═══════════════════════════════════════════════════════════════
+//  Boot overrides (with cascading vendor → model selects)
+// ═══════════════════════════════════════════════════════════════
+let _allVendors = [];
+let _allModels = [];
+let _allMeterTypes = [];
+
+async function _loadEquipmentLookups() {
+  const [vr, mr, mtr] = await Promise.all([
+    fetch('/api/vendors').then(r => r.json()),
+    fetch('/api/models').then(r => r.json()),
+    fetch('/api/meter-types').then(r => r.json()),
+  ]);
+  _allVendors = vr.vendors || [];
+  _allModels = mr.models || [];
+  _allMeterTypes = mtr.meter_types || [];
+}
+
+function _populateOvrVendors() {
+  const sel = document.getElementById('ovr-vendor');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Select vendor —</option>';
+  _allVendors.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.name; opt.textContent = v.name;
+    sel.appendChild(opt);
+  });
+  sel.value = cur;
+}
+
+function onOvrVendorChange() {
+  const vendorName = document.getElementById('ovr-vendor').value;
+  const sel = document.getElementById('ovr-model');
+  sel.innerHTML = '';
+  if (!vendorName) {
+    sel.innerHTML = '<option value="">— Select vendor first —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— Select model —</option>';
+  const vendor = _allVendors.find(v => v.name === vendorName);
+  if (!vendor) return;
+  const models = _allModels.filter(m => m.vendor_id === vendor.id);
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.name; opt.textContent = m.name;
+    sel.appendChild(opt);
+  });
+}
+
+function _populateOvrMeterTypes() {
+  const sel = document.getElementById('ovr-meter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Select meter type —</option>';
+  _allMeterTypes.forEach(mt => {
+    const opt = document.createElement('option');
+    opt.value = mt.name; opt.textContent = mt.name;
+    sel.appendChild(opt);
+  });
+  sel.value = cur;
+}
+
+async function loadOverrides() {
+  await _loadEquipmentLookups();
+  _populateOvrVendors();
+  _populateOvrMeterTypes();
+  _populateBackendSelect('ovr-backends');
+
+  // Refresh connected clients into the CP dropdown
+  const connResp = await fetch('/api/connections');
+  const connData = await connResp.json();
+  updateSelectClients('ovr-cp', connData.clients || []);
+
+  const resp = await fetch('/api/overrides');
+  const overrides = (await resp.json()).overrides || [];
+  const container = document.getElementById('overrides-list');
+  container.innerHTML = '';
+  document.getElementById('overrides-empty').style.display = overrides.length ? 'none' : 'block';
+
+  overrides.forEach(o => {
+    const targets = (!o.backends || o.backends === '*') ? 'All' : escHtml(o.backends);
+    const card = document.createElement('div');
+    card.className = 'override-card';
+    card.innerHTML =
+      `<div class="override-header">
+        <span class="override-cp">${escHtml(o.cp_id)}</span>
+        <div>
+          <span class="badge ${o.enabled ? 'badge-active' : 'badge-blocked'}">${o.enabled ? 'Active' : 'Disabled'}</span>
+          <button class="btn btn-sm btn-danger" style="margin-left:8px" onclick="deleteOverride('${escAttr(o.cp_id)}')">Delete</button>
+        </div>
+      </div>
+      <div class="override-fields">
+        <div class="override-field"><label>Vendor</label><div class="val">${escHtml(o.charge_point_vendor || '—')}</div></div>
+        <div class="override-field"><label>Model</label><div class="val">${escHtml(o.charge_point_model || '—')}</div></div>
+        <div class="override-field"><label>Serial Number</label><div class="val">${escHtml(o.charge_point_serial_number || '—')}</div></div>
+        <div class="override-field"><label>Firmware</label><div class="val">${escHtml(o.firmware_version || '—')}</div></div>
+        <div class="override-field"><label>Meter Type</label><div class="val">${escHtml(o.meter_type || '—')}</div></div>
+        <div class="override-field"><label>Target CSMS</label><div class="val">${targets}</div></div>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+async function saveOverride() {
+  const cpId = document.getElementById('ovr-cp').value;
+  if (!cpId) { alert('Select a charge point'); return; }
+  await fetch('/api/overrides', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      cp_id: cpId,
+      charge_point_vendor: document.getElementById('ovr-vendor').value,
+      charge_point_model: document.getElementById('ovr-model').value,
+      charge_point_serial_number: document.getElementById('ovr-serial').value,
+      firmware_version: document.getElementById('ovr-firmware').value,
+      meter_type: document.getElementById('ovr-meter').value,
+      backends: _selectedBackends('ovr-backends'),
+      enabled: true,
+    }),
+  });
+  loadOverrides();
+}
+
+async function deleteOverride(cpId) {
+  await fetch('/api/overrides/' + encodeURIComponent(cpId), { method: 'DELETE' });
+  loadOverrides();
+}
+
+socket.on('overrides_update', () => loadOverrides());
+
+// ═══════════════════════════════════════════════════════════════
+//  Equipment Database (Vendors / Models / Meter Types)
+// ═══════════════════════════════════════════════════════════════
+let _eqSelectedVendor = null;
+
+async function loadEquipment() {
+  await _loadEquipmentLookups();
+  renderEqVendors();
+  renderEqMeterTypes();
+  if (_eqSelectedVendor) renderEqModels(_eqSelectedVendor);
+}
+
+function renderEqVendors() {
+  const container = document.getElementById('eq-vendor-list');
+  container.innerHTML = '';
+  _allVendors.forEach(v => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(64,69,85,0.4);';
+    const isSelected = _eqSelectedVendor && _eqSelectedVendor.id === v.id;
+    row.innerHTML =
+      `<span style="flex:1;cursor:pointer;color:${isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)'};font-weight:${isSelected ? '600' : '400'}" onclick="eqSelectVendor(${v.id})">${escHtml(v.name)}</span>` +
+      `<span style="color:var(--text-secondary);font-size:11px;">${_allModels.filter(m=>m.vendor_id===v.id).length} models</span>` +
+      `<button class="btn btn-sm btn-danger" onclick="eqDeleteVendor(${v.id},'${escAttr(v.name)}')" title="Delete">✕</button>`;
+    container.appendChild(row);
+  });
+}
+
+function eqSelectVendor(vendorId) {
+  _eqSelectedVendor = _allVendors.find(v => v.id === vendorId) || null;
+  renderEqVendors();
+  renderEqModels(_eqSelectedVendor);
+}
+
+function renderEqModels(vendor) {
+  const container = document.getElementById('eq-model-list');
+  const empty = document.getElementById('eq-model-empty');
+  const addRow = document.getElementById('eq-model-add-row');
+  const label = document.getElementById('eq-models-vendor-label');
+
+  if (!vendor) {
+    container.innerHTML = '';
+    empty.style.display = 'block';
+    addRow.style.display = 'none';
+    label.textContent = '';
+    return;
+  }
+
+  label.textContent = '— ' + vendor.name;
+  empty.style.display = 'none';
+  addRow.style.display = 'flex';
+
+  const models = _allModels.filter(m => m.vendor_id === vendor.id);
+  container.innerHTML = '';
+  if (models.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:16px;">No models for this vendor</div>';
+    return;
+  }
+  models.forEach(m => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(64,69,85,0.4);';
+    row.innerHTML =
+      `<span style="flex:1;color:var(--text-primary)">${escHtml(m.name)}</span>` +
+      `<button class="btn btn-sm btn-danger" onclick="eqDeleteModel(${m.id},'${escAttr(m.name)}')" title="Delete">✕</button>`;
+    container.appendChild(row);
+  });
+}
+
+function renderEqMeterTypes() {
+  const container = document.getElementById('eq-meter-list');
+  container.innerHTML = '';
+  _allMeterTypes.forEach(mt => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(64,69,85,0.4);';
+    row.innerHTML =
+      `<span style="flex:1;color:var(--text-primary)">${escHtml(mt.name)}</span>` +
+      `<button class="btn btn-sm btn-danger" onclick="eqDeleteMeterType(${mt.id},'${escAttr(mt.name)}')" title="Delete">✕</button>`;
+    container.appendChild(row);
+  });
+}
+
+async function eqAddVendor() {
+  const name = document.getElementById('eq-new-vendor').value.trim();
+  if (!name) return;
+  await fetch('/api/vendors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  document.getElementById('eq-new-vendor').value = '';
+  loadEquipment();
+}
+
+async function eqDeleteVendor(id, name) {
+  if (!confirm('Delete vendor "' + name + '" and all its models?')) return;
+  await fetch('/api/vendors/' + id, { method: 'DELETE' });
+  if (_eqSelectedVendor && _eqSelectedVendor.id === id) _eqSelectedVendor = null;
+  loadEquipment();
+}
+
+async function eqAddModel() {
+  if (!_eqSelectedVendor) return;
+  const name = document.getElementById('eq-new-model').value.trim();
+  if (!name) return;
+  await fetch('/api/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vendor_id: _eqSelectedVendor.id, name }),
+  });
+  document.getElementById('eq-new-model').value = '';
+  loadEquipment();
+}
+
+async function eqDeleteModel(id, name) {
+  if (!confirm('Delete model "' + name + '"?')) return;
+  await fetch('/api/models/' + id, { method: 'DELETE' });
+  loadEquipment();
+}
+
+async function eqAddMeterType() {
+  const name = document.getElementById('eq-new-meter').value.trim();
+  if (!name) return;
+  await fetch('/api/meter-types', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  document.getElementById('eq-new-meter').value = '';
+  loadEquipment();
+}
+
+async function eqDeleteMeterType(id, name) {
+  if (!confirm('Delete meter type "' + name + '"?')) return;
+  await fetch('/api/meter-types/' + id, { method: 'DELETE' });
+  loadEquipment();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Proxy Settings (listen port + backends)
+// ═══════════════════════════════════════════════════════════════
+let _cfgBackends = [];
+
+async function loadSettings() {
+  // Load port
+  const portResp = await fetch('/api/config/port');
+  const portData = await portResp.json();
+  document.getElementById('cfg-port').value = portData.port || 9100;
+
+  // Load backends
+  const beResp = await fetch('/api/backends');
+  const beData = await beResp.json();
+  _cfgBackends = beData.backends || [];
+  renderBackends();
+}
+
+function renderBackends() {
+  const container = document.getElementById('cfg-backend-list');
+  container.innerHTML = '';
+  const addSection = document.getElementById('cfg-backend-add');
+  addSection.style.display = _cfgBackends.length >= 3 ? 'none' : 'block';
+
+  if (_cfgBackends.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:16px;">No backend servers configured</div>';
+    return;
+  }
+
+  _cfgBackends.forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'override-card';
+    card.innerHTML =
+      `<div class="override-header">
+        <span class="override-cp">${escHtml(b.name)}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="badge ${b.enabled ? 'badge-active' : 'badge-blocked'}">${b.enabled ? 'Enabled' : 'Disabled'}</span>
+          <button class="btn btn-sm ${b.enabled ? 'btn-danger' : 'btn-success'}" onclick="cfgToggleBackend(${b.id}, ${b.enabled ? 'false' : 'true'})">
+            ${b.enabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="cfgDeleteBackend(${b.id}, '${escAttr(b.name)}')" title="Delete">✕</button>
+        </div>
+      </div>
+      <div class="override-fields">
+        <div class="override-field" style="flex:3;"><label>URL</label><div class="val" style="word-break:break-all;">${escHtml(b.url)}</div></div>
+      </div>
+      <div style="padding:4px 16px 12px; display:flex; gap:8px;">
+        <input type="text" id="cfg-be-name-${b.id}" value="${escAttr(b.name)}" placeholder="Name" style="flex:1;">
+        <input type="text" id="cfg-be-url-${b.id}" value="${escAttr(b.url)}" placeholder="ws://..." style="flex:2;">
+        <button class="btn btn-sm btn-primary" onclick="cfgUpdateBackend(${b.id})">Save</button>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+async function cfgSavePort() {
+  const port = document.getElementById('cfg-port').value;
+  const status = document.getElementById('cfg-port-status');
+  status.style.color = 'var(--text-secondary)';
+  status.textContent = 'Applying…';
+  try {
+    const resp = await fetch('/api/config/port', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port: parseInt(port, 10) }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      status.style.color = 'var(--accent-green)';
+      status.textContent = 'Listener restarted on port ' + port;
+    } else {
+      status.style.color = 'var(--accent-red)';
+      status.textContent = data.error || 'Failed';
+    }
+  } catch (e) {
+    status.style.color = 'var(--accent-red)';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function cfgAddBackend() {
+  const name = document.getElementById('cfg-new-be-name').value.trim();
+  const url = document.getElementById('cfg-new-be-url').value.trim();
+  const status = document.getElementById('cfg-backend-status');
+  if (!name || !url) { status.style.color = 'var(--accent-red)'; status.textContent = 'Name and URL are required'; return; }
+  try {
+    const resp = await fetch('/api/backends', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, url, enabled: true }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      document.getElementById('cfg-new-be-name').value = '';
+      document.getElementById('cfg-new-be-url').value = '';
+      status.style.color = 'var(--accent-green)';
+      status.textContent = 'Backend added — charge points reconnecting';
+      loadSettings();
+    } else {
+      status.style.color = 'var(--accent-red)';
+      status.textContent = data.error || 'Failed';
+    }
+  } catch (e) {
+    status.style.color = 'var(--accent-red)';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function cfgUpdateBackend(id) {
+  const name = document.getElementById('cfg-be-name-' + id).value.trim();
+  const url = document.getElementById('cfg-be-url-' + id).value.trim();
+  const status = document.getElementById('cfg-backend-status');
+  if (!name || !url) { status.style.color = 'var(--accent-red)'; status.textContent = 'Name and URL are required'; return; }
+  const resp = await fetch('/api/backends/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, url }),
+  });
+  const data = await resp.json();
+  if (data.ok) {
+    status.style.color = 'var(--accent-green)';
+    status.textContent = 'Backend updated — charge points reconnecting';
+    loadSettings();
+  }
+}
+
+async function cfgToggleBackend(id, enabled) {
+  await fetch('/api/backends/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  document.getElementById('cfg-backend-status').style.color = 'var(--accent-green)';
+  document.getElementById('cfg-backend-status').textContent = 'Backend ' + (enabled ? 'enabled' : 'disabled') + ' — charge points reconnecting';
+  loadSettings();
+}
+
+async function cfgDeleteBackend(id, name) {
+  if (!confirm('Delete backend "' + name + '"? All connections to it will be closed.')) return;
+  await fetch('/api/backends/' + id, { method: 'DELETE' });
+  document.getElementById('cfg-backend-status').style.color = 'var(--accent-green)';
+  document.getElementById('cfg-backend-status').textContent = 'Backend deleted — charge points reconnecting';
+  loadSettings();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Connector Control (ChangeAvailability)
+// ═══════════════════════════════════════════════════════════════
+const _caHistory = [];
+
+async function loadConnectorTab() {
+  // Refresh connected clients into the CP dropdown
+  _populateBackendSelect('ca-backends');
+  const resp = await fetch('/api/connections');
+  const data = await resp.json();
+  const clients = data.clients || [];
+  const sel = document.getElementById('ca-cp');
+  const cur = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  clients.forEach(cp => {
+    const opt = document.createElement('option');
+    opt.value = cp; opt.textContent = cp;
+    sel.appendChild(opt);
+  });
+  sel.value = cur;
+  loadCaHistory();
+}
+
+async function loadCaHistory() {
+  // Load the last 10 persisted connector state changes from the database.
+  try {
+    const resp = await fetch('/api/connector-history');
+    const data = await resp.json();
+    _caHistory.length = 0;
+    (data.history || []).forEach(h => {
+      const ts = h.timestamp
+        ? new Date(h.timestamp).toLocaleTimeString('en-GB', { hour12: false })
+        : '';
+      _caHistory.push({
+        ts, cp: h.cp_id, connector: h.connector_id, type: h.status,
+        backends: h.backends, result: 'Sent',
+      });
+    });
+    renderCaHistory();
+  } catch (e) {
+    /* ignore – panel will simply stay empty */
+  }
+}
+
+function onCaCpChange() {
+  // Could be extended to query available connectors from the station
+}
+
+async function sendChangeAvailability() {
+  const cpId = document.getElementById('ca-cp').value;
+  const connectorId = document.getElementById('ca-connector').value;
+  const type = document.getElementById('ca-type').value;
+  const backends = _selectedBackends('ca-backends');
+  const status = document.getElementById('ca-status');
+
+  if (!cpId) { status.style.color = 'var(--accent-red)'; status.textContent = 'Select a charge station'; return; }
+
+  status.style.color = 'var(--text-secondary)';
+  status.textContent = 'Sending…';
+
+  try {
+    const resp = await fetch('/api/change-availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cp_id: cpId, connector_id: parseInt(connectorId, 10), type, backends }),
+    });
+    const data = await resp.json();
+    const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    if (data.ok) {
+      status.style.color = 'var(--accent-green)';
+      status.textContent = 'Connector status sent to CSMS';
+      await loadCaHistory();
+      return;
+    } else {
+      status.style.color = 'var(--accent-red)';
+      status.textContent = data.error || 'Failed';
+      _caHistory.unshift({ ts, cp: cpId, connector: connectorId, type, backends, result: data.error || 'Failed' });
+    }
+  } catch (e) {
+    status.style.color = 'var(--accent-red)';
+    status.textContent = 'Error: ' + e.message;
+    _caHistory.unshift({ ts: new Date().toLocaleTimeString('en-GB', { hour12: false }), cp: cpId, connector: connectorId, type, backends, result: e.message });
+  }
+  renderCaHistory();
+}
+
+function renderCaHistory() {
+  const tbody = document.querySelector('#ca-history-table tbody');
+  const empty = document.getElementById('ca-history-empty');
+  tbody.innerHTML = '';
+  empty.style.display = _caHistory.length ? 'none' : 'block';
+  _caHistory.forEach(h => {
+    const tr = document.createElement('tr');
+    const badgeMap = {
+      Available: 'badge-active', Charging: 'badge-active',
+      Preparing: 'badge-info', Finishing: 'badge-info',
+      SuspendedEVSE: 'badge-blocked', SuspendedEV: 'badge-blocked',
+      Unavailable: 'badge-blocked', Faulted: 'badge-blocked',
+      Reserved: 'badge-info',
+    };
+    const statusBadge = `<span class="badge ${badgeMap[h.type] || 'badge-info'}">${escHtml(h.type)}</span>`;
+    const targets = (!h.backends || h.backends === '*') ? 'All' : escHtml(h.backends);
+    const resultBadge = h.result === 'Sent'
+      ? '<span class="badge badge-active">Sent</span>'
+      : '<span class="badge badge-blocked">' + escHtml(h.result) + '</span>';
+    tr.innerHTML = `<td style="color:var(--text-secondary)">${h.ts}</td>` +
+      `<td>${escHtml(h.cp)}</td>` +
+      `<td>${h.connector}</td>` +
+      `<td>${statusBadge}</td>` +
+      `<td>${targets}</td>` +
+      `<td>${resultBadge}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════════════════
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+function escAttr(s) {
+  return (s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// Initial data load
+fetch('/api/connections').then(r => r.json()).then(d => {
+  // Trigger the same logic as the socket handler directly
+  _handleConnectionsUpdate(d);
+});
+loadBlocked();
+
+// Open the tab requested via URL hash (e.g. /dashboard#stats), default to Events
+(function openInitialTab() {
+  const name = (location.hash || '').replace('#', '');
+  if (name && tabTitles[name]) {
+    showTab(name);
+  }
+})();
+</script>
+</body>
+</html>

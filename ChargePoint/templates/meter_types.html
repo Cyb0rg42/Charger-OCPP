@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block page_title %}Meter Types{% endblock %}
+{% block content %}
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header-custom">
+    <span class="card-title-custom">Meter Types</span>
+  </div>
+  <div style="padding:16px 20px;">
+    <div class="filter-bar" style="margin-bottom:12px;">
+      <input type="text" id="mt-new" placeholder="New meter type name">
+      <button class="btn btn-primary" onclick="mtAdd()">Add</button>
+    </div>
+    <div id="mt-list"></div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let _allMeterTypes = [];
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function loadMeterTypes() {
+  $.getJSON("/api/meter-types", function(types) {
+    _allMeterTypes = types || [];
+    renderMeterTypes();
+  });
+}
+
+function renderMeterTypes() {
+  const box = document.getElementById("mt-list");
+  if (!_allMeterTypes.length) {
+    box.innerHTML = '<div class="empty-state">No meter types yet.</div>';
+    return;
+  }
+  let html = '<table class="data-table"><tbody>';
+  _allMeterTypes.forEach(function(t) {
+    html += '<tr>'
+      + '<td>' + esc(t.name) + '</td>'
+      + '<td style="width:80px; text-align:right;">'
+      + '<button class="btn btn-danger btn-sm" onclick="mtDelete(' + t.id + ')">Delete</button>'
+      + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+function mtAdd() {
+  const inp = document.getElementById("mt-new");
+  const name = inp.value.trim();
+  if (!name) return;
+  $.ajax({
+    url: "/api/meter-types", method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({ name: name })
+  }).done(function() { inp.value = ""; loadMeterTypes(); });
+}
+
+function mtDelete(id) {
+  if (!confirm("Delete this meter type?")) return;
+  $.ajax({ url: "/api/meter-types/" + id, method: "DELETE" }).done(loadMeterTypes);
+}
+
+$(document).ready(loadMeterTypes);
+</script>
+{% endblock %}

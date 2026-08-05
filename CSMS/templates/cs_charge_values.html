@@ -1,0 +1,161 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Charge Values</h2>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="card-title text-white mb-2">Per-Chargepoint Maximum Current</h5>
+    <small class="text-muted d-block mb-3">
+      Configure the maximum current (A) per phase per charge point. The total available power is
+      computed as Σ (amp&nbsp;×&nbsp;voltage) over the active phases, and the highest charge point's
+      kW is used as the default <em>Charging Power</em> on the Charging dashboard.
+    </small>
+    <div class="card">
+      <div class="card-header">Charge Points</div>
+      <div class="card-body p-0">
+        <div style="max-height:600px; overflow-y:auto;">
+          <table class="table table-striped table-sm mb-0" id="cv-table">
+            <thead class="sticky-top">
+              <tr>
+                <th>Charge Point</th>
+                <th>Phases</th>
+                <th>L1 (A)</th>
+                <th>L2 (A)</th>
+                <th>L3 (A)</th>
+                <th>Voltage (V)</th>
+                <th>Max Power (kW)</th>
+                <th>Updated</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="cv-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+function fmtVal(v) {
+  return (v === null || v === undefined || v === '') ? '' : v;
+}
+
+function renderRow(cv) {
+  var phases = cv.num_phases || 1;
+  var voltage = cv.voltage != null ? cv.voltage : 230;
+  var l1 = fmtVal(cv.max_amp_l1);
+  var l2 = fmtVal(cv.max_amp_l2);
+  var l3 = fmtVal(cv.max_amp_l3);
+  var maxKw = (cv.max_kw != null) ? cv.max_kw.toFixed(2) : '-';
+  var updated = cv.updated_at ? cv.updated_at : '-';
+
+  return (
+    '<tr data-cp-id="' + escapeHtml(cv.cp_id) + '">' +
+      '<td>' + escapeHtml(cv.cp_id) + '</td>' +
+      '<td>' +
+        '<select class="form-select form-select-sm cv-phases" style="width:80px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+          '<option value="1"' + (phases === 1 ? ' selected' : '') + '>1</option>' +
+          '<option value="2"' + (phases === 2 ? ' selected' : '') + '>2</option>' +
+          '<option value="3"' + (phases === 3 ? ' selected' : '') + '>3</option>' +
+        '</select>' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" class="form-control form-control-sm cv-l1" min="0" step="1" value="' + escapeHtml(l1) + '" ' +
+        'style="width:90px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" class="form-control form-control-sm cv-l2" min="0" step="1" value="' + escapeHtml(l2) + '" ' +
+        (phases < 2 ? 'disabled ' : '') +
+        'style="width:90px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" class="form-control form-control-sm cv-l3" min="0" step="1" value="' + escapeHtml(l3) + '" ' +
+        (phases < 3 ? 'disabled ' : '') +
+        'style="width:90px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" class="form-control form-control-sm cv-voltage" min="1" step="1" value="' + escapeHtml(voltage) + '" ' +
+        'style="width:90px; background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">' +
+      '</td>' +
+      '<td class="cv-max-kw">' + maxKw + '</td>' +
+      '<td>' + escapeHtml(updated) + '</td>' +
+      '<td><button class="btn btn-sm btn-success cv-save-btn">Save</button></td>' +
+    '</tr>'
+  );
+}
+
+function refreshChargeValues() {
+  $.getJSON('/api/charge-values', function(data) {
+    var tb = $('#cv-body');
+    tb.empty();
+    if (!data || !data.length) {
+      tb.append('<tr><td colspan="9" class="text-center text-muted">No charge points registered.</td></tr>');
+      return;
+    }
+    data.forEach(function(cv) {
+      tb.append(renderRow(cv));
+    });
+  });
+}
+
+// Enable/disable phase inputs when phase count changes.
+$(document).on('change', '.cv-phases', function() {
+  var $row = $(this).closest('tr');
+  var n = parseInt($(this).val(), 10) || 1;
+  $row.find('.cv-l2').prop('disabled', n < 2);
+  $row.find('.cv-l3').prop('disabled', n < 3);
+});
+
+$(document).on('click', '.cv-save-btn', function() {
+  var $row = $(this).closest('tr');
+  var cpId = $row.data('cp-id');
+  var phases = parseInt($row.find('.cv-phases').val(), 10) || 1;
+  function valOrNull(sel) {
+    var v = $row.find(sel).val();
+    return (v === '' || v === null || v === undefined) ? null : parseFloat(v);
+  }
+  var payload = {
+    num_phases: phases,
+    max_amp_l1: valOrNull('.cv-l1'),
+    max_amp_l2: phases >= 2 ? valOrNull('.cv-l2') : null,
+    max_amp_l3: phases >= 3 ? valOrNull('.cv-l3') : null,
+    voltage: valOrNull('.cv-voltage') || 230,
+  };
+  var $btn = $(this);
+  var origText = $btn.text();
+  $btn.prop('disabled', true).text('Saving...');
+  $.ajax({
+    url: '/api/charge-values/' + encodeURIComponent(cpId),
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify(payload),
+    success: function() {
+      $btn.text('Saved').removeClass('btn-success').addClass('btn-outline-success');
+      // Refresh row to show recalculated max_kw and timestamp.
+      $.getJSON('/api/charge-values/' + encodeURIComponent(cpId), function(cv) {
+        $row.find('.cv-max-kw').text(cv.max_kw != null ? cv.max_kw.toFixed(2) : '-');
+      });
+      setTimeout(function() {
+        $btn.prop('disabled', false).text(origText).removeClass('btn-outline-success').addClass('btn-success');
+      }, 1500);
+    },
+    error: function(xhr) {
+      var msg = (xhr.responseJSON && xhr.responseJSON.error) ? xhr.responseJSON.error : 'Failed to save';
+      alert(msg);
+      $btn.prop('disabled', false).text(origText);
+    }
+  });
+});
+
+$(document).ready(refreshChargeValues);
+</script>
+{% endblock %}

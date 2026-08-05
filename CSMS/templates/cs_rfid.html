@@ -1,0 +1,265 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">ID Tags</h2>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="mb-3">
+      <label for="rfid-upload-input" class="form-label text-white">Batch Upload ID Tags</label>
+      <p class="text-white small mb-2" style="color: var(--text-primary) !important;">Enter each ID tag on a separate line with fields: <strong>ID Tag</strong>, <strong>Charge Point</strong>, <strong>Site</strong>, <strong>Assigned To</strong> (comma-separated). Leave blank fields empty if not needed.</p>
+      <textarea id="rfid-upload-input" class="form-control border-secondary" rows="3" style="background-color: var(--bg-secondary); color: #ffffff; width: 100%; font-size: 13px; font-family: monospace;" placeholder="ABC123,CP001,HQ,John Doe"></textarea>
+      <div class="mt-2">
+        <label for="rfid-chargepoint-select" class="form-label text-white">Default Charge Point</label>
+        <select id="rfid-chargepoint-select" class="form-control" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+          <option value="">-- Select Charge Point --</option>
+        </select>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btn-upload-rfid" class="btn btn-primary">Upload ID Tags</button>
+      <button id="btn-export-rfid" class="btn btn-outline-light">Export ID Tags</button>
+    </div>
+    <div id="rfid-upload-result" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">ID Tag List</div>
+  <div class="card-body p-0">
+    <div style="max-height:520px; overflow-y:auto;">
+      <table class="table table-striped table-sm mb-0" id="rfid-table">
+        <thead class="sticky-top">
+          <tr><th>ACTIONS</th><th>ID</th><th>ID Tag</th><th>Status</th><th>Charge Point</th><th>Site</th><th>Assigned To</th><th>Created</th></tr>
+        </thead>
+        <tbody id="rfid-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editRfidModal" tabindex="-1" role="dialog" aria-labelledby="editRfidLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content" style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-color);">
+        <h5 class="modal-title" id="editRfidLabel">Edit ID Tag</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group mb-3">
+          <label for="edit-id-tag" class="form-label" style="color: var(--text-primary);">ID Tag</label>
+          <input type="text" class="form-control" id="edit-id-tag" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+        </div>
+        <div class="form-group mb-3">
+          <label for="edit-chargepoint" class="form-label" style="color: var(--text-primary);">Charge Point</label>
+          <select id="edit-chargepoint" class="form-control" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            <option value="">-- Select Charge Point --</option>
+          </select>
+        </div>
+        <div class="form-group mb-3">
+          <label for="edit-site" class="form-label" style="color: var(--text-primary);">Site</label>
+          <input type="text" class="form-control" id="edit-site" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+        </div>
+        <div class="form-group">
+          <label for="edit-assigned-to" class="form-label" style="color: var(--text-primary);">Assigned To</label>
+          <input type="text" class="form-control" id="edit-assigned-to" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+        </div>
+      </div>
+      <div class="modal-footer" style="border-top: 1px solid var(--border-color);">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-rfid">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function refreshRfid() {
+  $.getJSON('/api/rfids', function(data) {
+    const tb = $('#rfid-body');
+    tb.empty();
+    if (!data.length) {
+      tb.append('<tr><td colspan="8" class="text-center text-muted">No ID tags added.</td></tr>');
+      return;
+    }
+    data.forEach(function(r) {
+      const chargePoint = r.charge_point || r.account || '';
+      const isBlocked = r.blocked === 1;
+      const statusBadge = isBlocked
+        ? '<span class="badge bg-danger">Blocked</span>'
+        : '<span class="badge bg-success">Active</span>';
+      const toggleBtn = isBlocked
+        ? '<button class="btn btn-sm btn-success me-1" onclick="toggleBlock(' + r.id + ', 0)" title="Unblock">✓</button>'
+        : '<button class="btn btn-sm btn-secondary me-1" onclick="toggleBlock(' + r.id + ', 1)" title="Block">🚫</button>';
+      const actionsBtns = toggleBtn +
+                          '<button class="btn btn-sm btn-warning me-1" onclick="editRfid(' + r.id + ', \'' + escapeHtml(r.id_tag) + '\', \'' + escapeHtml(chargePoint) + '\', \'' + escapeHtml(r.site) + '\', \'' + escapeHtml(r.assigned_to) + '\')" title="Edit">✎</button>' +
+                          '<button class="btn btn-sm btn-danger" onclick="deleteRfid(' + r.id + ')" title="Delete">🗑</button>';
+      tb.append('<tr' + (isBlocked ? ' class="table-danger"' : '') + '><td>' + actionsBtns + '</td><td>' + r.id + '</td><td>' + escapeHtml(r.id_tag) + '</td><td>' + statusBadge + '</td><td>' + escapeHtml(chargePoint) + '</td><td>' + escapeHtml(r.site) + '</td><td>' + escapeHtml(r.assigned_to) + '</td><td>' + fmtDate(r.created_at) + '</td></tr>');
+    });
+  });
+}
+
+function loadChargePoints() {
+  $.getJSON('/api/chargepoints', function(data) {
+    const select = $('#rfid-chargepoint-select');
+    const editSelect = $('#edit-chargepoint');
+    select.empty().append('<option value="">-- Select Charge Point --</option>');
+    editSelect.empty().append('<option value="">-- Select Charge Point --</option>');
+    data.forEach(function(cp) {
+      const option = '<option value="' + cp.cp_id + '">' + cp.cp_id + '</option>';
+      select.append(option);
+      editSelect.append(option);
+    });
+  });
+}
+
+$('#btn-upload-rfid').click(function() {
+  const txt = $('#rfid-upload-input').val().trim();
+  const resultDiv = $('#rfid-upload-result');
+  
+  if (!txt) {
+    resultDiv.html('<div class="alert alert-warning mb-0">Please enter ID tag data below.</div>');
+    return;
+  }
+  
+  const lines = txt.split('\n').filter(line => line.trim());
+  const rfids = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const parts = lines[i].split(',').map(p => p.trim());
+    if (parts[0]) {
+      rfids.push({
+        id_tag: parts[0],
+        charge_point: parts[1] || $('#rfid-chargepoint-select').val() || '',
+        site: parts[2] || '',
+        assigned_to: parts[3] || ''
+      });
+    }
+  }
+  
+  if (rfids.length === 0) {
+    resultDiv.html('<div class="alert alert-warning mb-0">No valid ID tag entries found.</div>');
+    return;
+  }
+  
+  resultDiv.html('<div class="alert alert-info mb-0">Uploading ' + rfids.length + ' ID tag(s)...</div>');
+  
+  $.ajax({
+    url: '/api/rfid-upload',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({rfids: rfids}),
+    success: function(resp) {
+      resultDiv.html('<div class="alert alert-success mb-0">' + resp.imported + ' ID tag(s) imported successfully.</div>');
+      $('#rfid-upload-input').val('');
+      refreshRfid();
+    },
+    error: function(xhr) {
+      const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText;
+      resultDiv.html('<div class="alert alert-danger mb-0">Error: ' + escapeHtml(errorMsg) + '</div>');
+    }
+  });
+});
+
+$('#btn-export-rfid').click(function() {
+  $.getJSON('/api/rfids', function(data) {
+    let csv = 'ID,ID Tag,Status,Charge Point,Site,Assigned To,Created At\n';
+    data.forEach(function(r) {
+      csv += [r.id, r.id_tag, r.blocked ? 'Blocked' : 'Active', r.charge_point || r.account, r.site, r.assigned_to, r.created_at]
+        .map(v => '"' + String(v || '').replace(/"/g, '""') + '"')
+        .join(',') + '\n';
+    });
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'rfids.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+});
+
+$(function() {
+  loadChargePoints();
+  refreshRfid();
+  setInterval(refreshRfid, 15000);
+});
+
+function editRfid(id, idTag, chargePoint, site, assignedTo) {
+  $('#edit-id-tag').val(idTag);
+  $('#edit-chargepoint').val(chargePoint || '');
+  $('#edit-site').val(site);
+  $('#edit-assigned-to').val(assignedTo);
+  $('#btn-save-rfid').data('rfid-id', id);
+  const modal = new bootstrap.Modal(document.getElementById('editRfidModal'));
+  modal.show();
+}
+
+function deleteRfid(id) {
+  if (confirm('Are you sure you want to delete this ID tag?')) {
+    $.ajax({
+      url: '/api/rfid/' + id,
+      method: 'DELETE',
+      success: function() {
+        refreshRfid();
+      },
+      error: function(xhr) {
+        alert('Error deleting ID tag: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+      }
+    });
+  }
+}
+
+function toggleBlock(id, blocked) {
+  $.ajax({
+    url: '/api/rfid/' + id,
+    method: 'PUT',
+    contentType: 'application/json',
+    data: JSON.stringify({ blocked: blocked }),
+    success: function() {
+      refreshRfid();
+    },
+    error: function(xhr) {
+      alert('Error updating ID tag: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+    }
+  });
+}
+
+$('#btn-save-rfid').click(function() {
+  const id = $(this).data('rfid-id');
+  const idTag = $('#edit-id-tag').val().trim();
+  
+  if (!idTag) {
+    alert('ID Tag cannot be empty');
+    return;
+  }
+  
+  $.ajax({
+    url: '/api/rfid/' + id,
+    method: 'PUT',
+    contentType: 'application/json',
+    data: JSON.stringify({
+      id_tag: idTag,
+      charge_point: $('#edit-chargepoint').val().trim(),
+      site: $('#edit-site').val().trim(),
+      assigned_to: $('#edit-assigned-to').val().trim()
+    }),
+    success: function() {
+      const modal = bootstrap.Modal.getInstance(document.getElementById('editRfidModal'));
+      modal.hide();
+      refreshRfid();
+    },
+    error: function(xhr) {
+      alert('Error saving RFID: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+    }
+  });
+});
+</script>
+{% endblock %}

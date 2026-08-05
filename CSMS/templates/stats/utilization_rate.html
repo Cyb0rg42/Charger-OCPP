@@ -1,0 +1,23 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Utilization Rate</h2>
+<div class="row mb-3">
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Utilization Rate</div>
+        <div class="stat-value text-info" id="stat-utilization">- %</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $.getJSON('/api/stats/utilization_rate', function(data) {
+    $('#stat-utilization').text((data.utilization_percent || 0).toFixed(1) + ' %');
+  });
+});
+</script>
+{% endblock %}

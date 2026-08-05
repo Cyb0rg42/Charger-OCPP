@@ -1,0 +1,23 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Revenue</h2>
+<div class="row mb-3">
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Total Revenue</div>
+        <div class="stat-value text-info" id="stat-revenue">- €</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $.getJSON('/api/stats/revenue', function(data) {
+    $('#stat-revenue').text((data.revenue_eur || 0).toFixed(2) + ' €');
+  });
+});
+</script>
+{% endblock %}

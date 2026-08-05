@@ -1,0 +1,6 @@
+flask
+ocpp
+websockets
+pyyaml
+requests
+python-dateutil

@@ -1,0 +1,367 @@
+{% extends "cs_base.html" %}
+{% block content %}
+
+<h2 class="section-title">Transaction Configuration</h2>
+
+<!-- Filters Row -->
+<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center;">
+  <div style="display: flex; gap: 12px; flex: 1;">
+    <input type="date" id="txn-start" placeholder="Start date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+    <input type="date" id="txn-end" placeholder="End date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+    <input type="text" id="txn-filter" placeholder="Search charge point/session..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; flex: 1; min-width: 250px;">
+    <button class="btn btn-primary" id="btn-refresh-txns" style="white-space: nowrap;">Refresh</button>
+  </div>
+</div>
+
+<!-- Transactions Table -->
+<div class="table-container">
+  <div style="max-height: 600px; overflow-y: auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Actions</th>
+          <th>Txn ID</th>
+          <th>Charger</th>
+          <th>Conn</th>
+          <th>ID Tag</th>
+          <th>Start</th>
+          <th>Stop</th>
+          <th>Cable Connected</th>
+          <th>Session Duration</th>
+          <th>Energy (kWh)</th>
+          <th>Cost (€)</th>
+          <th>€/KM</th>
+          <th>KM</th>
+          <th>Car</th>
+        </tr>
+      </thead>
+      <tbody id="txn-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit Transaction Modal -->
+<div class="modal fade" id="editTxnModal" tabindex="-1" role="dialog" aria-labelledby="editTxnLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content" style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-color);">
+        <h5 class="modal-title" id="editTxnLabel">Edit Transaction</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="form-group mb-3">
+              <label for="edit-cp-id" class="form-label" style="color: var(--text-primary);">Charge Point</label>
+              <input type="text" class="form-control" id="edit-cp-id" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-connector-id" class="form-label" style="color: var(--text-primary);">Connector ID</label>
+              <input type="number" class="form-control" id="edit-connector-id" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-id-tag" class="form-label" style="color: var(--text-primary);">ID Tag</label>
+              <select class="form-select" id="edit-id-tag" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+                <option value="">-- Select ID Tag --</option>
+              </select>
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-stop-reason" class="form-label" style="color: var(--text-primary);">Stop Reason</label>
+              <input type="text" class="form-control" id="edit-stop-reason" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-group mb-3">
+              <label for="edit-meter-start" class="form-label" style="color: var(--text-primary);">Meter Start (Wh)</label>
+              <input type="number" class="form-control" id="edit-meter-start" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-meter-stop" class="form-label" style="color: var(--text-primary);">Meter Stop (Wh)</label>
+              <input type="number" class="form-control" id="edit-meter-stop" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-started-at" class="form-label" style="color: var(--text-primary);">Started At</label>
+              <input type="datetime-local" class="form-control" id="edit-started-at" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+            <div class="form-group mb-3">
+              <label for="edit-stopped-at" class="form-label" style="color: var(--text-primary);">Stopped At</label>
+              <input type="datetime-local" class="form-control" id="edit-stopped-at" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+          </div>
+        </div>
+        <hr style="border-color: var(--border-color);">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="form-group mb-3">
+              <label for="edit-car" class="form-label" style="color: var(--text-primary);">Car</label>
+              <select class="form-select" id="edit-car" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+                <option value="">-- None --</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <hr style="border-color: var(--border-color);">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="form-group mb-3">
+              <label for="edit-charging-start" class="form-label" style="color: var(--text-primary);">Charging Start</label>
+              <input type="datetime-local" class="form-control" id="edit-charging-start" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-group mb-3">
+              <label for="edit-charging-stop" class="form-label" style="color: var(--text-primary);">Charging Stop</label>
+              <input type="datetime-local" class="form-control" id="edit-charging-stop" style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-top: 1px solid var(--border-color);">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-txn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatDuration(start, end) {
+  if (!start || !end) return '-';
+  var a = new Date(start);
+  var b = new Date(end);
+  var d = Math.max(0, Math.floor((b - a) / 1000));
+  if (d <= 0) return '-';
+  var h = Math.floor(d / 3600);
+  var m = Math.floor((d % 3600) / 60);
+  var s = d % 60;
+  return (h ? h + 'h ' : '') + m + 'm ' + s + 's';
+}
+
+function toLocalInput(isoStr) {
+  if (!isoStr) return '';
+  try {
+    var d = new Date(isoStr);
+    var offset = d.getTimezoneOffset();
+    var local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
+  } catch(e) { return ''; }
+}
+
+function fromLocalInput(val) {
+  if (!val) return null;
+  try {
+    return new Date(val).toISOString();
+  } catch(e) { return null; }
+}
+
+var _rfidList = [];
+
+function fillIdTagSelect(currentValue) {
+  var select = $('#edit-id-tag');
+  select.empty().append('<option value="">-- Select ID Tag --</option>');
+
+  _rfidList.forEach(function(r) {
+    var tag = r.id_tag || '';
+    if (!tag) return;
+    var label = tag + (r.assigned_to ? ' (' + r.assigned_to + ')' : '');
+    select.append('<option value="' + escapeHtml(tag) + '">' + escapeHtml(label) + '</option>');
+  });
+
+  if (currentValue) {
+    var exists = _rfidList.some(function(r) { return (r.id_tag || '') === currentValue; });
+    if (!exists) {
+      select.append('<option value="' + escapeHtml(currentValue) + '">' + escapeHtml(currentValue) + ' (current)</option>');
+    }
+    select.val(currentValue);
+  }
+}
+
+function renderTransactions(txns) {
+  const body = $('#txn-body');
+  body.empty();
+  if (!txns.length) {
+    body.append('<tr><td colspan="16" style="text-align: center; color: var(--text-secondary); padding: 20px;">No transactions found.</td></tr>');
+    return;
+  }
+  txns.forEach(function(t) {
+    var energy = '-';
+    var displayTag = t.assigned_to || t.id_tag || '-';
+    if (t.meter_stop != null && t.meter_start != null) {
+      var wh = t.meter_stop - t.meter_start;
+      energy = (wh >= 0) ? (wh / 1000).toFixed(3) : '-';
+    }
+    var actions = '<button class="btn btn-sm btn-warning me-1" onclick="editTxn(' + t.id + ')" title="Edit">✎</button>' +
+                  '<button class="btn btn-sm btn-danger" onclick="deleteTxn(' + t.id + ')" title="Delete">🗑</button>';
+    var kmVal = (t.km != null) ? t.km.toFixed(1) : '-';
+    var carCell = '';
+    if (t.stopped_at || t.meter_stop != null || t.charge_session_stop) {
+      carCell = '<select class="form-select form-select-sm car-select" data-txn-id="' + t.id + '" '
+        + 'style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); min-width: 120px; font-size: 12px;">'
+        + '<option value="">-- None --</option>';
+      _carList.forEach(function(c) {
+        var sel = (t.car_id === c.id) ? ' selected' : '';
+        carCell += '<option value="' + c.id + '"' + sel + '>' + escapeHtml(c.license_plate || (c.brand + ' ' + c.model)) + '</option>';
+      });
+      carCell += '</select>';
+    } else {
+      carCell = '-';
+    }
+    body.append('<tr>' +
+      '<td>' + actions + '</td>' +
+      '<td>' + escapeHtml(String(t.id)) + '</td>' +
+      '<td>' + escapeHtml(t.cp_id || '') + '</td>' +
+      '<td>' + (t.connector_id || '-') + '</td>' +
+      '<td>' + escapeHtml(displayTag) + '</td>' +
+      '<td>' + fmtDate(t.charge_session_start || t.session_start_at) + '</td>' +
+      '<td>' + fmtDate(t.charge_session_stop || t.session_end_at) + '</td>' +
+      '<td>' + formatDuration(t.cable_connected_at || t.started_at, t.cable_ready_at || t.stopped_at) + '</td>' +
+      '<td>' + formatDuration(t.charge_session_start || t.session_start_at, t.charge_session_stop || t.session_end_at) + '</td>' +
+      '<td>' + energy + '</td>' +
+      '<td>' + (t.cost_eur != null ? '<a href="#" onclick="showCostDetail(' + t.id + '); return false;" style="color: var(--text-primary); text-decoration: underline dotted;">€ ' + t.cost_eur.toFixed(2) + '</a>' : '-') + '</td>' +
+      '<td>' + (t.cost_eur != null && kmVal !== '-' && parseFloat(kmVal) > 0 ? '€ ' + (t.cost_eur / parseFloat(kmVal)).toFixed(2) : '-') + '</td>' +
+      '<td>' + kmVal + '</td>' +
+      '<td>' + carCell + '</td>' +
+      '</tr>');
+  });
+}
+
+function refreshTransactions() {
+  var start = $('#txn-start').val();
+  var end = $('#txn-end').val();
+  var filter = $('#txn-filter').val().trim().toLowerCase();
+  var query = '';
+  if (start) query += 'start=' + encodeURIComponent(start);
+  if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
+  $.getJSON('/api/charging-events?' + query, function(txns) {
+    if (filter) {
+      txns = txns.filter(function(t) {
+        return ('' + t.cp_id).toLowerCase().includes(filter) ||
+               ('' + t.id).includes(filter) ||
+               ('' + (t.assigned_to || '')).toLowerCase().includes(filter) ||
+               ('' + t.id_tag).toLowerCase().includes(filter);
+      });
+    }
+    renderTransactions(txns);
+  });
+}
+
+function editTxn(id) {
+  $.getJSON('/api/transaction/' + id, function(t) {
+    $('#edit-cp-id').val(t.cp_id || '');
+    $('#edit-connector-id').val(t.connector_id || '');
+    fillIdTagSelect(t.id_tag || '');
+    $('#edit-meter-start').val(t.meter_start != null ? t.meter_start : '');
+    $('#edit-meter-stop').val(t.meter_stop != null ? t.meter_stop : '');
+    $('#edit-started-at').val(toLocalInput(t.started_at));
+    $('#edit-stopped-at').val(toLocalInput(t.stopped_at));
+    $('#edit-stop-reason').val(t.stop_reason || '');
+    $('#edit-charging-start').val(toLocalInput(t.charging_start));
+    $('#edit-charging-stop').val(toLocalInput(t.charging_stop));
+    var carSelect = $('#edit-car');
+    carSelect.empty().append('<option value="">-- None --</option>');
+    _carList.forEach(function(c) {
+      var sel = (t.car_id === c.id) ? ' selected' : '';
+      carSelect.append('<option value="' + c.id + '"' + sel + '>' + escapeHtml(c.license_plate || (c.brand + ' ' + c.model)) + '</option>');
+    });
+    $('#btn-save-txn').data('txn-id', id);
+    var modal = new bootstrap.Modal(document.getElementById('editTxnModal'));
+    modal.show();
+  }).fail(function(xhr) {
+    alert('Error loading transaction: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+  });
+}
+
+function deleteTxn(id) {
+  if (confirm('Are you sure you want to delete transaction ' + id + '? This will also delete associated meter values.')) {
+    $.ajax({
+      url: '/api/transaction/' + id,
+      method: 'DELETE',
+      success: function() {
+        refreshTransactions();
+      },
+      error: function(xhr) {
+        alert('Error deleting transaction: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+      }
+    });
+  }
+}
+
+$('#btn-save-txn').click(function() {
+  var id = $(this).data('txn-id');
+  var meterStart = $('#edit-meter-start').val();
+  var meterStop = $('#edit-meter-stop').val();
+  var payload = {
+    cp_id: $('#edit-cp-id').val().trim() || null,
+    connector_id: parseInt($('#edit-connector-id').val()) || null,
+    id_tag: $('#edit-id-tag').val() || null,
+    meter_start: meterStart !== '' ? parseInt(meterStart) : null,
+    meter_stop: meterStop !== '' ? parseInt(meterStop) : null,
+    started_at: fromLocalInput($('#edit-started-at').val()),
+    stopped_at: fromLocalInput($('#edit-stopped-at').val()),
+    stop_reason: $('#edit-stop-reason').val().trim() || null,
+    charging_start: fromLocalInput($('#edit-charging-start').val()),
+    charging_stop: fromLocalInput($('#edit-charging-stop').val()),
+    car_id: $('#edit-car').val() ? parseInt($('#edit-car').val()) : null
+  };
+  $.ajax({
+    url: '/api/transaction/' + id,
+    method: 'PUT',
+    contentType: 'application/json',
+    data: JSON.stringify(payload),
+    success: function() {
+      bootstrap.Modal.getInstance(document.getElementById('editTxnModal')).hide();
+      refreshTransactions();
+    },
+    error: function(xhr) {
+      alert('Error saving transaction: ' + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText));
+    }
+  });
+});
+
+$('#btn-refresh-txns').click(refreshTransactions);
+
+$(document).on('change', '.car-select', function() {
+  var txnId = $(this).data('txn-id');
+  var carId = $(this).val();
+  $.ajax({
+    url: '/api/transaction/' + txnId,
+    method: 'PUT',
+    contentType: 'application/json',
+    data: JSON.stringify({ car_id: carId ? parseInt(carId) : null }),
+    success: function() { refreshTransactions(); },
+    error: function() { alert('Failed to update car.'); }
+  });
+});
+
+var _carList = [];
+
+$(function() {
+  $.when(
+    $.getJSON('/api/cars'),
+    $.getJSON('/api/rfids')
+  ).done(function(carsResp, rfidsResp) {
+    _carList = carsResp[0] || [];
+    _rfidList = rfidsResp[0] || [];
+    var today = new Date().toISOString().split('T')[0];
+    $('#txn-end').val(today);
+    var d = new Date();
+    d.setDate(d.getDate() - 7);
+    $('#txn-start').val(d.toISOString().split('T')[0]);
+    refreshTransactions();
+  }).fail(function() {
+    _carList = [];
+    _rfidList = [];
+    refreshTransactions();
+  });
+});
+</script>
+{% endblock %}

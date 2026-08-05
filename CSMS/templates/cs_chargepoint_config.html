@@ -1,0 +1,130 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Charge Point Configuration</h2>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <h5 class="card-title text-white mb-2">Delete Charge Point</h5>
+        <p class="mb-0 text-muted">Remove a charge point and all related database artifacts by its CP ID. Connected charge points cannot be deleted.</p>
+      </div>
+      <button id="btn-refresh-chargepoints" class="btn btn-primary">Refresh</button>
+    </div>
+    <div id="chargepoint-delete-result" class="mt-3"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Charge Point List</div>
+  <div class="card-body p-0">
+    <div style="max-height: 560px; overflow-y: auto;">
+      <table class="table table-striped table-sm mb-0" id="chargepoint-config-table">
+        <thead class="sticky-top">
+          <tr><th>Actions</th><th>CP ID</th><th>Status</th><th>Site</th><th>Created</th></tr>
+        </thead>
+        <tbody id="chargepoint-config-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+function showDeleteMessage(kind, text) {
+  const cls = kind === 'success' ? 'alert-success' : 'alert-danger';
+  $('#chargepoint-delete-result').html('<div class="alert ' + cls + ' mb-0">' + escapeHtml(text) + '</div>');
+}
+
+function buildDeleteSummary(deleted) {
+  const parts = [];
+  const labels = {
+    chargepoints: 'chargepoint',
+    connector_status: 'connector status rows',
+    connector_status_history: 'status history rows',
+    transactions: 'transactions',
+    meter_values: 'meter values',
+    event_log: 'event log rows',
+    smart_schedules: 'smart schedules',
+    rfids_cleared: 'RFID references cleared'
+  };
+  Object.keys(labels).forEach(function(key) {
+    if ((deleted[key] || 0) > 0) {
+      parts.push(deleted[key] + ' ' + labels[key]);
+    }
+  });
+  return parts.length ? parts.join(', ') : 'No related rows were removed.';
+}
+
+function refreshChargePointsForConfig() {
+  $.getJSON('/api/chargepoints', function(cps) {
+    const tbody = $('#chargepoint-config-body');
+    tbody.empty();
+    if (!cps.length) {
+      tbody.append('<tr><td colspan="5" class="text-center text-muted">No charge points registered.</td></tr>');
+      return;
+    }
+
+    cps.forEach(function(cp) {
+      const online = !!cp.online;
+      const statusBadge = online
+        ? '<span class="badge bg-success">Online</span>'
+        : '<span class="badge bg-secondary">Offline</span>';
+      const deleteBtn = online
+        ? '<button class="btn btn-sm btn-secondary" disabled title="Disconnect this charge point before deleting">Connected</button>'
+        : '<button class="btn btn-sm btn-danger btn-delete-cp" data-cp-id="' + escapeHtml(cp.cp_id) + '">Delete</button>';
+
+      tbody.append(
+        '<tr>' +
+          '<td>' + deleteBtn + '</td>' +
+          '<td>' + escapeHtml(cp.cp_id) + '</td>' +
+          '<td>' + statusBadge + '</td>' +
+          '<td>' + escapeHtml(cp.site || '') + '</td>' +
+          '<td>' + fmtDate(cp.created_at) + '</td>' +
+        '</tr>'
+      );
+    });
+  });
+}
+
+// Delegated click handler: reads the charge point id back out of the
+// data-cp-id attribute rather than concatenating it into an inline
+// onclick="..." string — HTML-escaping alone doesn't make that safe, since
+// entities in an attribute are decoded before the attribute's own text is
+// parsed as JS, so an escaped quote can still end up breaking out of the
+// JS string literal.
+$(document).on('click', '.btn-delete-cp', function() {
+  const cpId = $(this).attr('data-cp-id');
+  if (cpId) deleteChargePoint(cpId);
+});
+
+function deleteChargePoint(cpId) {
+  if (!confirm('Delete charge point ' + cpId + ' and all related database artifacts?')) return;
+  $.ajax({
+    url: '/api/chargepoint/' + encodeURIComponent(cpId),
+    method: 'DELETE',
+    success: function(response) {
+      showDeleteMessage('success', 'Deleted ' + cpId + '. Removed: ' + buildDeleteSummary(response.deleted || {}));
+      refreshChargePointsForConfig();
+    },
+    error: function(xhr) {
+      const msg = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Failed to delete charge point.';
+      showDeleteMessage('error', msg);
+    }
+  });
+}
+
+$('#btn-refresh-chargepoints').on('click', refreshChargePointsForConfig);
+
+$(document).ready(function() {
+  refreshChargePointsForConfig();
+});
+</script>
+{% endblock %}

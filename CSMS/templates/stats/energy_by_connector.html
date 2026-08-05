@@ -1,0 +1,26 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Energy by Connector</h2>
+<div class="row mb-3">
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Energy by Connector</div>
+        <div class="stat-value text-info" id="stat-energy-by-connector">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $.getJSON('/api/stats/energy_by_connector', function(data) {
+    var txt = (data.connectors || []).map(function(c) {
+      return 'Connector ' + c.id + ': ' + (c.energy_kwh || 0).toFixed(2) + ' kWh';
+    }).join('<br>');
+    $('#stat-energy-by-connector').html(txt || '-');
+  });
+});
+</script>
+{% endblock %}

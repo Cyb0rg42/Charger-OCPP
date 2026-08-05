@@ -1,0 +1,137 @@
+{% extends "cs_base.html" %}
+{% block content %}
+
+<h2 class="section-title">Statistics Dashboard</h2>
+
+<!-- Statistics cards: max 3 per row -->
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px;">
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Total Energy</div>
+        <div class="stat-value text-info" id="stat-total-energy">- Wh</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-primary h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-primary mb-1" style="font-size: 13px;">Peak Power</div>
+        <div class="stat-value text-primary" id="stat-peak-power">- W</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-success h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-success mb-1" style="font-size: 13px;">Transactions</div>
+        <div class="stat-value text-success" id="stat-transaction-count">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Avg Energy / Session</div>
+        <div class="stat-value text-info" id="stat-avg-energy">- Wh</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Avg Session Duration</div>
+        <div class="stat-value text-info" id="stat-avg-duration">- min</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Utilization Rate</div>
+        <div class="stat-value text-info" id="stat-utilization">- %</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Unique Users</div>
+        <div class="stat-value text-info" id="stat-unique-users">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">CO₂ Savings</div>
+        <div class="stat-value text-info" id="stat-co2-savings">- kg</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-danger h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-danger mb-1" style="font-size: 13px;">Errors / Alerts</div>
+        <div class="stat-value text-danger" id="stat-error-count">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Most Active Hour</div>
+        <div class="stat-value text-info" id="stat-most-active-hour">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+
+function refreshStats() {
+  // Total energy from first/last transaction meter values
+  $.getJSON('/api/stats/total_energy', function(data) {
+    $('#stat-total-energy').text((data.total_energy_kwh || 0).toFixed(3) + ' Wh');
+  });
+
+  // Load & Energy overview
+  $.getJSON('/api/load-energy-stats', function(data) {
+    $('#stat-peak-power').text((data.peak_power_kw || 0).toFixed(3) + ' W');
+    $('#stat-transaction-count').text(data.transactions || 0);
+  });
+
+  // Individual statistics
+  $.getJSON('/api/stats/avg_energy_per_session', function(data) {
+    $('#stat-avg-energy').text((data.avg_energy_kwh || 0).toFixed(2) + ' Wh');
+  });
+  $.getJSON('/api/stats/avg_session_duration', function(data) {
+    $('#stat-avg-duration').text((data.avg_duration_minutes || 0).toFixed(1) + ' min');
+  });
+  $.getJSON('/api/stats/utilization_rate', function(data) {
+    $('#stat-utilization').text((data.utilization_percent || 0).toFixed(1) + ' %');
+  });
+  $.getJSON('/api/stats/unique_users', function(data) {
+    $('#stat-unique-users').text(data.unique_users || 0);
+  });
+  $.getJSON('/api/stats/co2_savings', function(data) {
+    $('#stat-co2-savings').text((data.co2_kg || 0).toFixed(2) + ' kg');
+  });
+  $.getJSON('/api/stats/error_alert_count', function(data) {
+    $('#stat-error-count').text(data.error_count || 0);
+  });
+  $.getJSON('/api/stats/most_active_hour', function(data) {
+    var txt = (data.hour !== undefined && data.hour !== null) ? (data.hour + ':00 (' + (data.sessions || 0) + ' sessions)') : '-';
+    $('#stat-most-active-hour').text(txt);
+  });
+}
+
+$(function() {
+  refreshStats();
+  setInterval(refreshStats, 15000);
+});
+</script>
+{% endblock %}

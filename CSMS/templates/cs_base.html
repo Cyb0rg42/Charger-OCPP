@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ server_name }} - CSMS Point</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/cs_style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+</head>
+<body>
+<div class="dashboard-container">
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar">
+    <div class="logo">
+      <svg class="brand-logo" viewBox="0 0 220 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cyb0rg42 Charging">
+        <defs>
+          <linearGradient id="cybHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#06b6d4"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <polygon points="30,2 56,17 56,47 30,62 4,47 4,17" fill="#151a2e" stroke="url(#cybHexGrad)" stroke-width="2.5"/>
+        <polygon points="34,10 19,34 27,34 23,54 41,27 32,27" fill="#f59e0b"/>
+        <circle cx="30" cy="2" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="17" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="30" cy="62" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="17" r="2.2" fill="#06b6d4"/>
+        <text x="70" y="30" font-family="'Courier New', Consolas, monospace" font-size="22" font-weight="700" fill="#ffffff">Cyb0rg42</text>
+        <text x="70" y="49" font-family="'Courier New', Consolas, monospace" font-size="11" font-weight="700" fill="#06b6d4" letter-spacing="3">CHARGING</text>
+      </svg>
+      <hr class="logo-divider">
+      <span class="logo-subtext">CSMS ({{ server_name }})</span>
+      <hr class="logo-divider">
+    </div>
+
+    <nav class="nav-menu">
+      <h3 class="nav-section-title">SYSTEM</h3>
+      <ul class="nav-list">
+        <li><a href="/" class="nav-item{% if request.endpoint == 'index' %} active{% endif %}" data-page="dashboard">
+          <span class="nav-icon">🏠</span>
+          <span class="nav-label">Home</span>
+        </a></li>
+      </ul>
+
+      <h3 class="nav-section-title">MONITORING</h3>
+      <ul class="nav-list">
+        <li><a href="/events" class="nav-item{% if request.endpoint == 'events_page' %} active{% endif %}" data-page="events">
+          <span class="nav-icon">⚡</span>
+          <span class="nav-label">Transactions</span>
+        </a></li>
+        <li><a href="/stats" class="nav-item{% if request.endpoint == 'stats_page' %} active{% endif %}" data-page="stats">
+          <span class="nav-icon">📈</span>
+          <span class="nav-label">Statistics</span>
+        </a></li>
+        <li><a href="/logs" class="nav-item{% if request.endpoint == 'logs_page' %} active{% endif %}" data-page="logs">
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">Events</span>
+        </a></li>
+        <li><a href="/hardware" class="nav-item{% if request.endpoint == 'hardware_page' %} active{% endif %}" data-page="hardware">
+          <span class="nav-icon">🌡️</span>
+          <span class="nav-label">Hardware</span>
+        </a></li>
+        <li><a href="/zonneplan" class="nav-item{% if request.endpoint == 'zonneplan_page' %} active{% endif %}" data-page="zonneplan">
+          <span class="nav-icon">☀️</span>
+          <span class="nav-label">Zonneplan</span>
+        </a></li>
+        <li><a href="/charging" class="nav-item{% if request.endpoint == 'charging_page' %} active{% endif %}" data-page="charging">
+          <span class="nav-icon">🔋</span>
+          <span class="nav-label">Charging Plan</span>
+        </a></li>
+      </ul>
+
+      <h3 class="nav-section-title">CONFIGURATION</h3>
+      <ul class="nav-list">
+        <li><a href="/rfid" class="nav-item{% if request.endpoint == 'rfid_page' %} active{% endif %}" data-page="rfid">
+          <span class="nav-icon">🔐</span>
+          <span class="nav-label">ID Tags</span>
+        </a></li>
+        <li><a href="/transactions-mgmt" class="nav-item{% if request.endpoint == 'transactions_mgmt_page' %} active{% endif %}" data-page="transactions-mgmt">
+          <span class="nav-icon">📝</span>
+          <span class="nav-label">Transaction</span>
+        </a></li>
+        <li><a href="/ocpp-config" class="nav-item{% if request.endpoint == 'ocpp_config_page' %} active{% endif %}" data-page="ocpp-config">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">OCPP</span>
+        </a></li>
+        <li><a href="/mail-config" class="nav-item{% if request.endpoint == 'mail_config_page' %} active{% endif %}" data-page="mail-config">
+          <span class="nav-icon">📧</span>
+          <span class="nav-label">Mail</span>
+        </a></li>
+        <li><a href="/car-config" class="nav-item{% if request.endpoint == 'car_config_page' %} active{% endif %}" data-page="car-config">
+          <span class="nav-icon">🚗</span>
+          <span class="nav-label">Car</span>
+        </a></li>
+        <li><a href="/chargepoint-config" class="nav-item{% if request.endpoint == 'chargepoint_config_page' %} active{% endif %}" data-page="chargepoint-config">
+          <span class="nav-icon">🔌</span>
+          <span class="nav-label">Charge Point</span>
+        </a></li>
+        <li><a href="/charge-values" class="nav-item{% if request.endpoint == 'charge_values_page' %} active{% endif %}" data-page="charge-values">
+          <span class="nav-icon">⚡</span>
+          <span class="nav-label">Charge Values</span>
+        </a></li>
+        <li><a href="/zonneplan-config" class="nav-item{% if request.endpoint == 'zonneplan_config_page' %} active{% endif %}" data-page="zonneplan-config">
+          <span class="nav-icon">☀️</span>
+          <span class="nav-label">Zonneplan</span>
+        </a></li>
+      </ul>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="version">v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <h1 class="page-title">Dashboard</h1>
+      </div>
+      <div class="header-right">
+        <div class="status-badge" id="system-status">
+          <span class="status-dot"></span>
+          <span class="status-text">Online</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// Global date formatter: YYYY-MM-DD HH:MM:SS
+function fmtDate(d) {
+  if (!d) return '-';
+  var dt = new Date(d);
+  var y = dt.getFullYear();
+  var m = String(dt.getMonth()+1).padStart(2,'0');
+  var day = String(dt.getDate()).padStart(2,'0');
+  var h = String(dt.getHours()).padStart(2,'0');
+  var min = String(dt.getMinutes()).padStart(2,'0');
+  var s = String(dt.getSeconds()).padStart(2,'0');
+  return y + '-' + m + '-' + day + ' ' + h + ':' + min + ':' + s;
+}
+function fmtDateOnly(d) {
+  if (!d) return '-';
+  var dt = (d instanceof Date) ? d : new Date(d);
+  var y = dt.getFullYear();
+  var m = String(dt.getMonth()+1).padStart(2,'0');
+  var day = String(dt.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
+}
+// Session duration: StartTransaction until StopTransaction or an earlier stop-status boundary.
+function sessionDur(startedAt, stoppedAt, sessionEndAt) {
+  if (!startedAt) return '-';
+
+  var s = new Date(startedAt);
+  if (isNaN(s.getTime())) return '-';
+
+  var end = null;
+  var stop = stoppedAt ? new Date(stoppedAt) : null;
+  var hasValidStop = stop && !isNaN(stop.getTime()) && stop > s;
+
+  if (sessionEndAt) {
+    var e = new Date(sessionEndAt);
+    if (!isNaN(e.getTime()) && e > s) {
+      if (hasValidStop) {
+        // Only trust earlier status-based end if it is close to StopTransaction.
+        var deltaMs = stop - e;
+        if (deltaMs >= 0 && deltaMs <= 20 * 60 * 1000) {
+          end = e;
+        }
+      } else {
+        end = e;
+      }
+    }
+  }
+
+  if (!end && hasValidStop) {
+    end = stop;
+  }
+
+  if (!end) return '-';
+
+  var diff = Math.floor((end - s) / 1000);
+  if (diff <= 0) return '-';
+
+  var h = Math.floor(diff / 3600);
+  var m = Math.floor((diff % 3600) / 60);
+  return h + 'h ' + m + 'm';
+}
+</script>
+
+<!-- Cost Detail Modal -->
+<div class="modal fade" id="costDetailModal" tabindex="-1" aria-labelledby="costDetailLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content" style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-color);">
+        <h5 class="modal-title" id="costDetailLabel">Cost Breakdown — Transaction #<span id="costDetailTxnId"></span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="costDetailLoading" style="text-align: center; padding: 20px; color: var(--text-secondary);">Loading…</div>
+        <div id="costDetailError" style="display:none; text-align: center; padding: 20px; color: #e74c3c;"></div>
+        <div id="costDetailContent" style="display:none;">
+          <div class="table-container" style="margin: 0;">
+            <table class="table" id="costDetailTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Hour segment</th>
+                  <th>Duration</th>
+                  <th>Energy</th>
+                  <th>Tariff</th>
+                  <th>Cost</th>
+                </tr>
+              </thead>
+              <tbody id="costDetailBody"></tbody>
+              <tfoot>
+                <tr style="font-weight: bold; border-top: 2px solid var(--border-color);">
+                  <td></td>
+                  <td>Total</td>
+                  <td id="costDetailTotalDuration"></td>
+                  <td id="costDetailTotalEnergy"></td>
+                  <td id="costDetailAvgTariff"></td>
+                  <td id="costDetailTotalCost"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showCostDetail(txnId) {
+  $('#costDetailTxnId').text(txnId);
+  $('#costDetailLoading').show();
+  $('#costDetailError').hide();
+  $('#costDetailContent').hide();
+  var modal = new bootstrap.Modal(document.getElementById('costDetailModal'));
+  modal.show();
+
+  $.getJSON('/api/transaction/' + txnId + '/cost-detail', function(data) {
+    $('#costDetailLoading').hide();
+    var body = $('#costDetailBody');
+    body.empty();
+
+    if (!data.hours || data.hours.length === 0) {
+      $('#costDetailError').text('No hourly data available for this transaction.').show();
+      return;
+    }
+
+    var txStart = new Date(data.started_at);
+    var txStop = new Date(data.stopped_at);
+    var totalMinutes = 0;
+
+    data.hours.forEach(function(h, idx) {
+      // Skip hours with no energy consumed
+      if (!h.energy_wh || h.energy_wh <= 0) return;
+      // Parse hour key "YYYY-MM-DD HH" (UTC) to build segment boundaries
+      var parts = h.hour.split(' ');
+      var dateParts = parts[0].split('-');
+      var hourNum = parseInt(parts[1], 10);
+      var segStart = new Date(Date.UTC(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]), hourNum, 0, 0));
+      var segEnd = new Date(segStart.getTime() + 3600000); // +1 hour
+
+      // Clamp to transaction boundaries
+      if (segStart < txStart) segStart = txStart;
+      if (segEnd > txStop) segEnd = txStop;
+
+      var durationMin = Math.round((segEnd - segStart) / 60000);
+      totalMinutes += durationMin;
+
+      var dateLabel = fmtDateOnly(segStart);
+      var segLabel = segStart.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) + '–' +
+                     segEnd.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      var energyKwh = h.energy_wh / 1000.0;
+      var tariffStr = h.tariff_eur_per_kwh != null ? '€' + h.tariff_eur_per_kwh.toFixed(2) + '/kWh' : '-';
+      var costStr = h.cost_eur != null ? '€' + h.cost_eur.toFixed(2) : '-';
+
+      body.append('<tr>' +
+        '<td>' + dateLabel + '</td>' +
+        '<td>' + segLabel + '</td>' +
+        '<td>' + durationMin + ' min</td>' +
+        '<td>~' + energyKwh.toFixed(1) + ' kWh</td>' +
+        '<td>' + tariffStr + '</td>' +
+        '<td>' + costStr + '</td>' +
+        '</tr>');
+    });
+
+    var totalEnergyKwh = data.total_energy_wh / 1000.0;
+    var totalHours = Math.floor(totalMinutes / 60);
+    var remainMin = totalMinutes % 60;
+    var durationStr = totalHours > 0 ? totalHours + 'h ' + remainMin + 'm' : remainMin + ' min';
+
+    $('#costDetailTotalDuration').text(durationStr);
+    $('#costDetailTotalEnergy').text(totalEnergyKwh.toFixed(1) + ' kWh');
+    $('#costDetailAvgTariff').text(data.avg_tariff != null ? '⌀ €' + data.avg_tariff.toFixed(2) + '/kWh' : '-');
+    $('#costDetailTotalCost').text('€' + data.total_cost_eur.toFixed(2));
+    $('#costDetailContent').show();
+  }).fail(function(xhr) {
+    $('#costDetailLoading').hide();
+    var msg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to load cost details.';
+    $('#costDetailError').text(msg).show();
+  });
+}
+</script>
+<script>
+const languageTexts = {
+  'en': {'dashboard': 'Dashboard', 'events': 'Charging Events', 'stats': 'Load & Energy', 'logs': 'Event Log', 'settings': 'Station Settings', 'rfid': 'ID Tags'},
+  'fr': {'dashboard': 'Tableau de bord', 'events': 'Événements de charge', 'stats': 'Charge & Énergie', 'logs': 'Journal des événements', 'settings': 'Paramètres', 'rfid': 'ID Tags'},
+  'de': {'dashboard': 'Instrumententafel', 'events': 'Ladevorgänge', 'stats': 'Last & Energie', 'logs': 'Ereignisprotokoll', 'settings': 'Stationseinstellungen', 'rfid': 'ID Tags'}
+};
+
+function applyLanguage(lang) {
+  const texts = languageTexts[lang] || languageTexts['en'];
+  $('#lang-select').val(lang);
+  // Update navigation if needed
+}
+
+$('#lang-select').on('change', function() {
+  applyLanguage($(this).val());
+});
+
+// Initialize navigation
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', function(e) {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    this.classList.add('active');
+    const label = this.querySelector('.nav-label').textContent;
+    document.querySelector('.page-title').textContent = label;
+  });
+});
+
+applyLanguage('en');
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

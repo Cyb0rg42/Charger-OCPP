@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ system_name }} - OCPP Proxy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/proxy_style.css') }}?v=2">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    .home-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .home-body { flex: 1; overflow-y: auto; padding: 30px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 18px;
+      margin-bottom: 30px;
+    }
+    .summary-card {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .summary-card .label {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--text-secondary); margin-bottom: 8px;
+    }
+    .summary-card .value { font-size: 34px; font-weight: 700; }
+    .summary-card .value.cyan { color: var(--accent-cyan); }
+    .summary-card .value.green { color: var(--accent-green); }
+    .summary-card .value.orange { color: var(--accent-orange); }
+
+    .section-title {
+      font-size: 16px; font-weight: 600; margin: 10px 0 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title .count {
+      font-size: 12px; color: var(--text-secondary);
+      background: var(--bg-tertiary); border: 1px solid var(--border-color);
+      border-radius: 20px; padding: 2px 10px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+    .entity-card {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-left: 4px solid var(--border-color);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    .entity-card.online { border-left-color: var(--accent-green); }
+    .entity-card.offline { border-left-color: var(--accent-red); }
+    .entity-card.disabled { border-left-color: var(--text-secondary); opacity: 0.7; }
+    .entity-card.connected { border-left-color: var(--accent-cyan); }
+
+    .entity-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; gap: 10px;
+    }
+    .entity-name {
+      font-size: 17px; font-weight: 600; word-break: break-all;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .entity-icon { font-size: 20px; }
+
+    .pill {
+      font-size: 11px; font-weight: 600; padding: 4px 10px;
+      border-radius: 20px; white-space: nowrap;
+    }
+    .pill.green { background: rgba(74,222,128,0.15); color: var(--accent-green); }
+    .pill.red { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+    .pill.gray { background: rgba(176,181,192,0.15); color: var(--text-secondary); }
+    .pill.cyan { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+
+    .entity-meta { font-size: 13px; color: var(--text-secondary); line-height: 1.9; }
+    .entity-meta .k { color: var(--text-secondary); }
+    .entity-meta .v { color: var(--text-primary); }
+    .entity-meta code {
+      background: var(--bg-tertiary); padding: 1px 6px; border-radius: 4px;
+      font-size: 12px; color: var(--accent-blue);
+    }
+    .tag {
+      display: inline-block; font-size: 11px; padding: 2px 8px; margin: 2px 4px 2px 0;
+      background: var(--bg-tertiary); border: 1px solid var(--border-color);
+      border-radius: 6px; color: var(--text-primary);
+    }
+    .empty {
+      grid-column: 1 / -1;
+      text-align: center; color: var(--text-secondary);
+      padding: 40px; border: 1px dashed var(--border-color); border-radius: 10px;
+      background: var(--bg-secondary);
+    }
+    .link-btn {
+      text-decoration: none; color: var(--accent-orange);
+      border: 1px solid var(--border-color); background: var(--bg-tertiary);
+      padding: 8px 16px; border-radius: 6px; font-size: 13px;
+    }
+    .link-btn:hover { background: rgba(245,158,11,0.1); }
+    .updated { font-size: 11px; color: var(--text-secondary); }
+  </style>
+</head>
+<body>
+<div class="dashboard-container">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <svg class="brand-logo" viewBox="0 0 220 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cyb0rg42 Charging">
+        <defs>
+          <linearGradient id="cybHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#06b6d4"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <polygon points="30,2 56,17 56,47 30,62 4,47 4,17" fill="#151a2e" stroke="url(#cybHexGrad)" stroke-width="2.5"/>
+        <polygon points="34,10 19,34 27,34 23,54 41,27 32,27" fill="#f59e0b"/>
+        <circle cx="30" cy="2" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="17" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="30" cy="62" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="17" r="2.2" fill="#06b6d4"/>
+        <text x="70" y="30" font-family="'Courier New', Consolas, monospace" font-size="22" font-weight="700" fill="#ffffff">Cyb0rg42</text>
+        <text x="70" y="49" font-family="'Courier New', Consolas, monospace" font-size="11" font-weight="700" fill="#06b6d4" letter-spacing="3">CHARGING</text>
+      </svg>
+      <hr class="logo-divider">
+      <span class="logo-subtext">OCPP Proxy</span>
+      <hr class="logo-divider">
+    </div>
+    <nav class="nav-menu">
+      <h3 class="nav-section-title">Overview</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item active" href="/">
+          <span class="nav-icon">🏠</span><span class="nav-label">Home</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Monitoring</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" href="/dashboard#live">
+          <span class="nav-icon">📡</span><span class="nav-label">Events</span>
+        </a></li>
+        <li><a class="nav-item" href="/dashboard#events">
+          <span class="nav-icon">📋</span><span class="nav-label">Event Log</span>
+        </a></li>
+        <li><a class="nav-item" href="/dashboard#stats">
+          <span class="nav-icon">📊</span><span class="nav-label">Statistics</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Control</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" href="/dashboard#blocking">
+          <span class="nav-icon">🚫</span><span class="nav-label">Command Blocking</span>
+        </a></li>
+        <li><a class="nav-item" href="/dashboard#overrides">
+          <span class="nav-icon">✏️</span><span class="nav-label">Boot Overrides</span>
+        </a></li>
+        <li><a class="nav-item" href="/dashboard#connector">
+          <span class="nav-icon">🔌</span><span class="nav-label">Connector Control</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Configuration</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" href="/dashboard#settings">
+          <span class="nav-icon">⚙️</span><span class="nav-label">Proxy Settings</span>
+        </a></li>
+        <li><a class="nav-item" href="/dashboard#equipment">
+          <span class="nav-icon">🏭</span><span class="nav-label">Equipment Database</span>
+        </a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version">OCPP Proxy v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="home-main">
+    <header class="top-header">
+      <h1 class="page-title">Home</h1>
+      <div class="header-right">
+        <div class="status-badge">
+          <span class="status-dot" id="conn-dot"></span>
+          <span class="status-text" id="conn-text">Connecting…</span>
+        </div>
+        <a class="link-btn" href="/dashboard">Open Dashboard →</a>
+      </div>
+    </header>
+
+    <div class="home-body">
+      <!-- Summary -->
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="label">Charge Points Connected</div>
+          <div class="value cyan" id="sum-cps">–</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">CSMS Online</div>
+          <div class="value green" id="sum-csms">–</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Listen Port</div>
+          <div class="value orange" id="sum-port">–</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Last Updated</div>
+          <div class="value" style="font-size:18px;" id="sum-updated">–</div>
+        </div>
+      </div>
+
+      <!-- CSMS systems -->
+      <h2 class="section-title">🖥️ Central Systems (CSMS) <span class="count" id="csms-count">0</span></h2>
+      <div class="cards-grid" id="csms-grid">
+        <div class="empty">Loading…</div>
+      </div>
+
+      <!-- Charge points -->
+      <h2 class="section-title">🔌 Connected Charge Points <span class="count" id="cp-count">0</span></h2>
+      <div class="cards-grid" id="cp-grid">
+        <div class="empty">Loading…</div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+  const socket = io("/proxy", { transports: ["websocket", "polling"] });
+
+  socket.on("connect", () => setLive(true));
+  socket.on("disconnect", () => setLive(false));
+  // Refresh whenever proxy state changes
+  socket.on("overview_update", (data) => render(data));
+  socket.on("connections_update", () => loadOverview());
+  socket.on("client_event", () => loadOverview());
+
+  function setLive(on) {
+    const dot = document.getElementById("conn-dot");
+    const txt = document.getElementById("conn-text");
+    dot.style.backgroundColor = on ? "var(--accent-green)" : "var(--accent-red)";
+    txt.textContent = on ? "Live" : "Disconnected";
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return esc(iso);
+    return d.toLocaleString();
+  }
+
+  function fmtDateTime(iso) {
+    // Format as "YYYY-MM-DD HH:MM:SS" in local time.
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return esc(iso);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+           `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
+  function ago(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    const secs = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (secs < 60) return secs + "s ago";
+    if (secs < 3600) return Math.floor(secs / 60) + "m ago";
+    if (secs < 86400) return Math.floor(secs / 3600) + "h ago";
+    return Math.floor(secs / 86400) + "d ago";
+  }
+
+  function csmsCard(b) {
+    let cls, pill;
+    if (!b.enabled) { cls = "disabled"; pill = '<span class="pill gray">Disabled</span>'; }
+    else if (b.online === true) { cls = "online"; pill = '<span class="pill green">Online</span>'; }
+    else if (b.online === false) { cls = "offline"; pill = '<span class="pill red">Offline</span>'; }
+    else { cls = "disabled"; pill = '<span class="pill gray">Unknown</span>'; }
+
+    return `
+      <div class="entity-card ${cls}">
+        <div class="entity-head">
+          <div class="entity-name"><span class="entity-icon">🖥️</span>${esc(b.name)}</div>
+          ${pill}
+        </div>
+        <div class="entity-meta">
+          <div><span class="k">URL:</span> <code>${esc(b.url)}</code></div>
+          <div><span class="k">Connected:</span> <span class="v">${b.connected_since ? fmtDateTime(b.connected_since) : "—"}</span></div>
+          <div><span class="k">Active charge points:</span> <span class="v">${b.active_chargepoints}</span></div>
+          <div><span class="k">Last checked:</span> <span class="v">${b.checked_at ? ago(b.checked_at) : "—"}</span></div>
+        </div>
+      </div>`;
+  }
+
+  function cpCard(c) {
+    const backends = (c.backends && c.backends.length)
+      ? c.backends.map(n => `<span class="tag">${esc(n)}</span>`).join("")
+      : '<span class="k">none</span>';
+    const connectors = (c.connectors && c.connectors.length)
+      ? c.connectors.map(cn => `<span class="tag">#${esc(cn.connector_id)}: ${esc(cn.status)}</span>`).join("")
+      : '<span class="k">no overrides</span>';
+    const vendor = c.vendor || "—";
+    const model = c.model || "—";
+    const meterType = c.meter_type || "—";
+
+    return `
+      <div class="entity-card connected">
+        <div class="entity-head">
+          <div class="entity-name"><span class="entity-icon">🔌</span>${esc(c.cp_id)}</div>
+          <span class="pill cyan">Connected</span>
+        </div>
+        <div class="entity-meta">
+          <div><span class="k">Vendor:</span> <span class="v">${esc(vendor)}</span></div>
+          <div><span class="k">Model:</span> <span class="v">${esc(model)}</span></div>
+          <div><span class="k">Meter type:</span> <span class="v">${esc(meterType)}</span></div>
+          <div><span class="k">Connected:</span> <span class="v">${fmtDateTime(c.connected_at)}</span></div>
+          <div><span class="k">Backends:</span> ${backends}</div>
+          <div><span class="k">Last message:</span> <span class="v">${esc(c.last_action || "—")}</span> ${c.last_seen ? "· " + ago(c.last_seen) : ""}</div>
+          <div><span class="k">Connector status:</span> ${connectors}</div>
+        </div>
+      </div>`;
+  }
+
+  function render(data) {
+    const s = data.summary || {};
+    document.getElementById("sum-cps").textContent = s.chargepoints_connected ?? 0;
+    document.getElementById("sum-csms").textContent =
+      (s.backends_online ?? 0) + " / " + (s.backends_total ?? 0);
+    document.getElementById("sum-port").textContent = s.listen_port ?? "–";
+    document.getElementById("sum-updated").textContent = fmtTime(data.generated_at);
+
+    const backends = data.backends || [];
+    const cps = data.chargepoints || [];
+    document.getElementById("csms-count").textContent = backends.length;
+    document.getElementById("cp-count").textContent = cps.length;
+
+    document.getElementById("csms-grid").innerHTML = backends.length
+      ? backends.map(csmsCard).join("")
+      : '<div class="empty">No central systems configured. Add one in the Proxy Dashboard → Settings.</div>';
+
+    document.getElementById("cp-grid").innerHTML = cps.length
+      ? cps.map(cpCard).join("")
+      : '<div class="empty">No charge points are currently connected.</div>';
+  }
+
+  async function loadOverview() {
+    try {
+      const res = await fetch("/api/overview");
+      render(await res.json());
+    } catch (e) {
+      console.error("Failed to load overview", e);
+    }
+  }
+
+  loadOverview();
+  // Fallback poll in case socket events are missed
+  setInterval(loadOverview, 15000);
+</script>
+</body>
+</html>

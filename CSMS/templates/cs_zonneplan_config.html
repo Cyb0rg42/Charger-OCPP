@@ -1,0 +1,243 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Zonneplan Integration</h2>
+
+<!-- Status Card -->
+<div class="card mb-3">
+  <div class="card-header">Connection Status</div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="mb-2">
+          <span class="text-white">Status: </span>
+          <span id="zp-status-badge" class="badge bg-secondary">Loading...</span>
+        </div>
+        <div class="mb-2">
+          <span class="text-white">Email: </span>
+          <span id="zp-email" style="color: var(--text-secondary);">-</span>
+        </div>
+        <div class="mb-2">
+          <span class="text-white">Connection: </span>
+          <span id="zp-connection" style="color: var(--text-secondary);">-</span>
+        </div>
+      </div>
+      <div class="col-md-6 text-end">
+        <button id="btn-zp-disconnect" class="btn btn-outline-danger" style="display:none;">Disconnect</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Login Card (shown when not authenticated) -->
+<div class="card mb-3" id="zp-login-card" style="display:none;">
+  <div class="card-header">Connect to Zonneplan</div>
+  <div class="card-body">
+    <p class="text-white small mb-3">Enter the email address you use in the Zonneplan app. You will receive a verification email.</p>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label for="zp-email-input" class="form-label text-white">Email Address</label>
+        <input type="email" class="form-control" id="zp-email-input" placeholder="your@email.com"
+               style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      </div>
+      <div class="col-md-3">
+        <button id="btn-zp-login" class="btn btn-primary w-100">Send Verification</button>
+      </div>
+    </div>
+    <div id="zp-login-result" class="mt-2"></div>
+
+    <!-- Verify section (shown after sending email) -->
+    <div id="zp-verify-section" class="mt-3" style="display:none;">
+      <hr style="border-color: var(--border-color);">
+      <p class="text-white small">Check your email and click the verification link, then click the button below.</p>
+      <button id="btn-zp-verify" class="btn btn-success">I've Verified — Complete Login</button>
+      <div id="zp-verify-result" class="mt-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Setup Connection Card (shown when authenticated but no connection) -->
+<div class="card mb-3" id="zp-setup-card" style="display:none;">
+  <div class="card-header">Setup Connection</div>
+  <div class="card-body">
+    <p class="text-white small mb-3">Discover your Zonneplan electricity connection to fetch tariff data.</p>
+    <button id="btn-zp-setup" class="btn btn-primary">Discover Connection</button>
+    <div id="zp-setup-result" class="mt-2"></div>
+  </div>
+</div>
+
+<!-- Default Tariff Card -->
+<div class="card mb-3">
+  <div class="card-header">Default Tariff</div>
+  <div class="card-body">
+    <p class="text-white small mb-3">Used to calculate charging cost for hours that have no Zonneplan price available.</p>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label for="zp-default-tariff" class="form-label text-white">Default price (€ / kWh)</label>
+        <input type="number" step="0.01" min="0" class="form-control" id="zp-default-tariff" placeholder="0.30"
+               style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+      </div>
+      <div class="col-md-3">
+        <button id="btn-zp-save-tariff" class="btn btn-primary w-100">Save</button>
+      </div>
+    </div>
+    <div id="zp-tariff-result" class="mt-2"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+function refreshStatus() {
+  $.getJSON('/api/zonneplan/status', function(s) {
+    var badge = $('#zp-status-badge');
+    if (s.authenticated) {
+      badge.text('Connected').removeClass('bg-secondary bg-warning').addClass('bg-success');
+      $('#zp-email').text(s.email || '-');
+      $('#zp-connection').text(s.connection_uuid || 'Not configured');
+      $('#btn-zp-disconnect').show();
+      $('#zp-login-card').hide();
+
+      if (s.connection_uuid) {
+        $('#zp-setup-card').hide();
+      } else {
+        $('#zp-setup-card').show();
+      }
+    } else if (s.auth_status === 'pending') {
+      badge.text('Pending Verification').removeClass('bg-secondary bg-success').addClass('bg-warning');
+      $('#zp-email').text(s.email || '-');
+      $('#zp-connection').text('-');
+      $('#btn-zp-disconnect').show();
+      $('#zp-login-card').show();
+      $('#zp-verify-section').show();
+      $('#zp-setup-card').hide();
+    } else {
+      badge.text('Not Connected').removeClass('bg-success bg-warning').addClass('bg-secondary');
+      $('#zp-email').text('-');
+      $('#zp-connection').text('-');
+      $('#btn-zp-disconnect').hide();
+      $('#zp-login-card').show();
+      $('#zp-verify-section').hide();
+      $('#zp-setup-card').hide();
+    }
+  });
+}
+
+$('#btn-zp-login').on('click', function() {
+  var email = $('#zp-email-input').val().trim();
+  if (!email) { $('#zp-login-result').html('<span class="text-danger">Enter an email address.</span>'); return; }
+  $('#zp-login-result').html('<span class="text-info">Sending verification email...</span>');
+  $.ajax({
+    url: '/api/zonneplan/login',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ email: email }),
+    success: function(resp) {
+      if (resp.success) {
+        $('#zp-login-result').html('<span class="text-success">' + escapeHtml(resp.message) + '</span>');
+        $('#zp-verify-section').show();
+      } else {
+        $('#zp-login-result').html('<span class="text-danger">' + escapeHtml(resp.error || 'Unknown error') + '</span>');
+      }
+    },
+    error: function(xhr) {
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : 'Request failed';
+      $('#zp-login-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    }
+  });
+});
+
+$('#btn-zp-verify').on('click', function() {
+  $('#zp-verify-result').html('<span class="text-info">Checking verification...</span>');
+  $.ajax({
+    url: '/api/zonneplan/verify',
+    method: 'POST',
+    contentType: 'application/json',
+    data: '{}',
+    success: function(resp) {
+      if (resp.success) {
+        $('#zp-verify-result').html('<span class="text-success">' + escapeHtml(resp.message) + '</span>');
+        setTimeout(refreshStatus, 1000);
+      } else {
+        $('#zp-verify-result').html('<span class="text-warning">' + escapeHtml(resp.message) + '</span>');
+      }
+    },
+    error: function(xhr) {
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : 'Request failed';
+      $('#zp-verify-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    }
+  });
+});
+
+$('#btn-zp-setup').on('click', function() {
+  $('#zp-setup-result').html('<span class="text-info">Discovering connections...</span>');
+  $.ajax({
+    url: '/api/zonneplan/setup-connection',
+    method: 'POST',
+    contentType: 'application/json',
+    data: '{}',
+    success: function(resp) {
+      if (resp.success) {
+        $('#zp-setup-result').html('<span class="text-success">Connection configured: ' + escapeHtml(resp.connection_uuid) + '</span>');
+        setTimeout(refreshStatus, 1000);
+      } else {
+        $('#zp-setup-result').html('<span class="text-danger">' + escapeHtml(resp.error || 'Failed') + '</span>');
+      }
+    },
+    error: function(xhr) {
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : 'Request failed';
+      $('#zp-setup-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    }
+  });
+});
+
+$('#btn-zp-disconnect').on('click', function() {
+  if (!confirm('Disconnect from Zonneplan? This will clear all credentials.')) return;
+  $.ajax({
+    url: '/api/zonneplan/disconnect',
+    method: 'POST',
+    success: function() { refreshStatus(); }
+  });
+});
+
+function loadDefaultTariff() {
+  $.getJSON('/api/app-settings', function(settings) {
+    var t = settings.default_tariff_eur_per_kwh;
+    $('#zp-default-tariff').val((t !== undefined && t !== null && t !== '') ? t : '0.30');
+  });
+}
+
+$('#btn-zp-save-tariff').on('click', function() {
+  var val = parseFloat($('#zp-default-tariff').val());
+  if (isNaN(val) || val < 0) {
+    $('#zp-tariff-result').html('<span class="text-danger">Enter a valid price (€ / kWh).</span>');
+    return;
+  }
+  $('#zp-tariff-result').html('<span class="text-info">Saving...</span>');
+  $.ajax({
+    url: '/api/app-settings',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({ default_tariff_eur_per_kwh: val }),
+    success: function() {
+      $('#zp-tariff-result').html('<span class="text-success">Saved.</span>');
+    },
+    error: function(xhr) {
+      var msg = xhr.responseJSON ? xhr.responseJSON.error : 'Request failed';
+      $('#zp-tariff-result').html('<span class="text-danger">' + escapeHtml(msg) + '</span>');
+    }
+  });
+});
+
+$(document).ready(function() {
+  refreshStatus();
+  loadDefaultTariff();
+});
+</script>
+{% endblock %}

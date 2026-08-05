@@ -1,0 +1,365 @@
+= ChargePoint User Manual =
+
+The '''ChargePoint''' program is a Python‑based [https://www.openchargealliance.org/ OCPP 1.6] charge point (EV charger) '''simulator'''. It emulates the behaviour of an electric‑vehicle charging station and communicates with an OCPP Central System (CSMS) over WebSocket. A web interface lets you simulate cable and car connections, start and stop charging sessions, view live energy data, and inspect the OCPP message log.
+
+This manual describes how to '''install''', '''configure''', and '''use''' the ChargePoint simulator.
+
+__TOC__
+
+== Overview ==
+
+The ChargePoint program is a '''pure software simulator''' — it does not interface with real charging hardware. Instead it:
+
+* Simulates cable and car connection events from the web UI.
+* Generates simulated power, per‑phase current, and accumulated energy.
+* Connects to a CSMS over OCPP 1.6 and exchanges the standard messages.
+* Responds to remote commands (RemoteStart/Stop, Reset, UnlockConnector, ChangeAvailability).
+* Persists sessions, configuration, and OCPP logs to SQLite.
+
+=== Architecture ===
+
+<pre>
+┌──────────────────────────────────────────────┐
+│            ChargePoint Simulator             │
+│                                              │
+│  Flask + Socket.IO web GUI   ── SQLite DB    │
+│  Port 5000 (default)                         │
+│                                              │
+│  OCPP 1.6 client (background asyncio thread) │
+│        │                                     │
+└────────┼─────────────────────────────────────┘
+         ▼  ws://<csms>:9000/ocpp/<station_id>
+   Central System (CSMS) — or via the OCPPProxy
+</pre>
+
+{| class="wikitable"
+! Component !! File !! Responsibility
+|-
+| Entry point + web GUI || <code>chargepoint.py</code> || Flask + Socket.IO app, REST API, starts the OCPP thread
+|-
+| OCPP client / simulator || <code>cp_sim.py</code> || OCPP 1.6 message handling and energy simulation
+|-
+| Database layer || <code>db.py</code> || SQLite schema and data access
+|-
+| Data models || <code>models.py</code> || <code>Config</code>, <code>ChargeSession</code>, and <code>EmulatorState</code> dataclasses
+|}
+
+== Installation ==
+
+=== Requirements ===
+
+* '''Python 3.7+''' (uses async/await, type hints, f‑strings).
+* Python packages (no <code>requirements.txt</code> is shipped; install these directly):
+
+{| class="wikitable"
+! Package !! Purpose
+|-
+| <code>flask</code> || Web GUI framework
+|-
+| <code>flask-socketio</code> || Real‑time UI updates
+|-
+| <code>ocpp</code> || OCPP 1.6 protocol implementation
+|-
+| <code>websockets</code> || WebSocket client to the CSMS
+|}
+
+<code>sqlite3</code> is part of the Python standard library.
+
+=== Install steps ===
+
+# Create the application, data, and log directories:
+#: <pre>sudo mkdir -p /opt/charger/ChargePoint /opt/charger/data /var/log/charger</pre>
+# Copy the ChargePoint source files into <code>/opt/charger/ChargePoint/</code>.
+# Install dependencies (a virtual environment is recommended):
+#: <pre>pip install flask flask-socketio ocpp websockets</pre>
+
+=== Running manually ===
+
+<pre>
+# Use built-in defaults
+python3 chargepoint.py
+
+# Use a configuration file
+python3 chargepoint.py --config /opt/charger/ChargePoint/config.json
+</pre>
+
+The only command‑line argument is <code>--config</code>, the path to a JSON configuration file. When omitted, built‑in defaults are used. The web GUI starts on the configured port (default '''5000'''); open <code>http://&lt;host&gt;:5000</code>.
+
+=== Running as a systemd service ===
+
+A service unit is provided (<code>systemd/charger-chargepoint.service</code>):
+
+<pre>
+[Unit]
+Description=Charge Point Simulator
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/charger/ChargePoint
+ExecStart=/usr/bin/python3 /opt/charger/ChargePoint/chargepoint.py
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=file:/var/log/charger/chargepoint.stdout
+StandardError=file:/var/log/charger/chargepoint.stderr
+
+[Install]
+WantedBy=multi-user.target
+</pre>
+
+To install and enable the service:
+
+<pre>
+sudo cp systemd/charger-chargepoint.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now charger-chargepoint
+</pre>
+
+{{Note|To run with a config file under systemd, append <code>--config /opt/charger/ChargePoint/config.json</code> to the <code>ExecStart</code> line.}}
+
+=== Log file locations ===
+
+{| class="wikitable"
+! Log !! Default path !! Contents
+|-
+| OCPP wire log || <code>/var/log/charger/stationocpp.log</code> || All OCPP messages (JSON)
+|-
+| Access log || <code>/var/log/charger/access.log</code> || Web/application activity (JSON)
+|-
+| Error log || <code>/var/log/charger/error.log</code> || Errors and exceptions (JSON)
+|-
+| Service stdout / stderr || <code>/var/log/charger/chargepoint.stdout</code> / <code>.stderr</code> || Startup and runtime output
+|}
+
+== Configuration ==
+
+=== Configuration file ===
+
+The <code>--config</code> file is JSON. Example (<code>config_example.json</code>):
+
+<pre>
+{
+    "name": "CP_001",
+    "database": "/opt/charger/data/chargepoint1.db",
+    "port": 5000,
+    "logs": {
+        "ocpp_log": "/var/log/charger/stationocpp.log",
+        "access_log": "/var/log/charger/access.log",
+        "error_log": "/var/log/charger/error.log"
+    }
+}
+</pre>
+
+{| class="wikitable"
+! Key !! Description
+|-
+| <code>name</code> || Charge point / station identifier used in OCPP and shown in the UI
+|-
+| <code>database</code> || Path to the SQLite database file
+|-
+| <code>port</code> || Port for the Flask web GUI (HTTP)
+|-
+| <code>logs.ocpp_log</code> || Path to the OCPP wire protocol log
+|-
+| <code>logs.access_log</code> || Path to the access/general log
+|-
+| <code>logs.error_log</code> || Path to the error log
+|}
+
+=== Runtime settings ===
+
+The following settings are managed at runtime from the '''Settings''' dialog in the web UI (or the <code>/api/config</code> endpoint) and persisted in the database:
+
+{| class="wikitable"
+! Setting !! Default !! Meaning
+|-
+| <code>charge_point_vendor</code> || <code>DemoVendor</code> || Vendor name sent in BootNotification
+|-
+| <code>charge_point_model</code> || <code>PythonEmu</code> || Model name sent in BootNotification
+|-
+| <code>ocpp_url</code> || <code>ws://localhost:9000/ocpp</code> || WebSocket URL of the CSMS (reconnects on change)
+|-
+| <code>num_connectors</code> || <code>1</code> || Number of charging connectors
+|-
+| <code>max_kwh</code> || <code>50.0</code> || Maximum simulated power per session (kW)
+|-
+| <code>min_kwh</code> || <code>0.0</code> || Minimum simulated power per session (kW)
+|-
+| <code>id_tags</code> || <code>["DEFAULT_TAG"]</code> || RFID/ID tags sent in StartTransaction
+|}
+
+{{Note|The charge point connects to the CSMS at <code>&lt;ocpp_url&gt;/&lt;station_id&gt;</code>. Point this at the CSMS directly, or at the OCPPProxy (default <code>ws://&lt;proxy&gt;:9100/ocpp</code>).}}
+
+=== Database ===
+
+SQLite database (default <code>/opt/charger/data/chargepoint.db</code>), created automatically.
+
+{| class="wikitable"
+! Table !! Purpose
+|-
+| <code>config</code> || Key‑value runtime configuration (e.g. <code>ocpp_url</code>, <code>max_kwh</code>, <code>id_tags</code>)
+|-
+| <code>sessions</code> || Charging sessions (start/end time, energy, OCPP transaction id)
+|-
+| <code>ocpp_logs</code> || OCPP wire log entries (timestamp, severity, message)
+|}
+
+== Using the Web Interface ==
+
+Open the GUI at <code>http://&lt;host&gt;:5000</code>. State updates are pushed live over Socket.IO.
+
+=== Station Control (<code>/</code>) ===
+
+The main page simulates physical events and charging:
+
+* '''Cable''' — select a connector and connect/disconnect the charging cable.
+* '''Car''' — simulate a vehicle being present or absent.
+* '''Charging''' — start or stop a session. A session can only start when both the cable and car are connected.
+* '''Energy indicators''' — cumulative total energy and current‑session energy.
+* '''Charts''' — energy per session (bar) and cumulative energy over time (line), updating live.
+
+=== Statistics (<code>/stats</code>) ===
+
+Historical view of sessions: total session count, total energy, and a current‑charging indicator, plus a table of all sessions (ID, started, ended, duration, energy, status) sorted newest first. Active sessions show live‑updating duration and energy.
+
+=== OCPP Log (<code>/ocpp</code>) ===
+
+A searchable, auto‑refreshing table of OCPP messages and events with timestamp, severity (DEBUG/INFO/WARNING/ERROR), and message text. Use the search box to filter; the newest entries appear first.
+
+=== Settings dialog ===
+
+Edit the runtime settings (vendor, model, OCPP URL, number of connectors, ID tags, max/min kW). Saving persists the values immediately; changing the OCPP URL reconnects the charge point.
+
+== REST API Reference ==
+
+{| class="wikitable"
+! Endpoint !! Method !! Purpose
+|-
+| <code>/api/state</code> || GET || Current charger state (cable/car/charging, energy, sessions, history)
+|-
+| <code>/api/cable</code> || POST || Connect/disconnect the cable: <code>{"action":"connect","connector_id":1}</code> or <code>{"action":"disconnect"}</code>
+|-
+| <code>/api/car</code> || POST || Connect/disconnect the car: <code>{"action":"connect"}</code> / <code>{"action":"disconnect"}</code>
+|-
+| <code>/api/charging</code> || POST || Start/stop charging: <code>{"action":"start"}</code> / <code>{"action":"stop"}</code>
+|-
+| <code>/api/config</code> || GET / POST || Get or update runtime configuration
+|-
+| <code>/api/register</code> || POST || Reboot — re‑send BootNotification to the CSMS
+|-
+| <code>/api/remote-start</code> || POST || Start charging (same as the UI button)
+|-
+| <code>/api/remote-stop</code> || POST || Stop charging
+|-
+| <code>/api/soft-reset</code> || POST || Soft reset (stop charging, keep state)
+|-
+| <code>/api/hard-reset</code> || POST || Hard reset (clear all state)
+|-
+| <code>/api/unlock-connector</code> || POST || Unlock a connector: <code>{"connector_id":1}</code>
+|-
+| <code>/api/ocpp-logs</code> || GET || Fetch OCPP logs (search via <code>?q=</code>)
+|}
+
+== The Simulator ==
+
+The OCPP client (<code>cp_sim.py</code>) runs in a background asyncio thread started by <code>chargepoint.py</code>. It maintains the WebSocket connection to the CSMS, performs the BootNotification handshake, sends heartbeats and meter values, and handles remote commands.
+
+=== Energy simulation ===
+
+While a session is active, a background loop updates the simulated values periodically:
+
+* '''Power''' — a value between <code>min_kwh</code> and <code>max_kwh</code>.
+* '''Per‑phase current''' — derived from power (≈ power ÷ 230 V ÷ 3) with small random variation, reported as L1/L2/L3.
+* '''Energy''' — power integrated over time, accumulated in kWh.
+
+=== Sessions and connectors ===
+
+Each session records its start time, energy, and the OCPP transaction id assigned by the CSMS, and is persisted to SQLite. The simulator supports 1–N connectors (<code>num_connectors</code>), with one active connector at a time. Connectors can be marked operative/inoperative via OCPP <code>ChangeAvailability</code>.
+
+=== ID tags ===
+
+The configured <code>id_tags</code> are sent in StartTransaction to simulate an RFID swipe (no real validation is performed).
+
+== OCPP 1.6 Support Reference ==
+
+=== Messages sent (Charge Point → CSMS) ===
+
+{| class="wikitable"
+! Message !! When !! Purpose
+|-
+| <code>BootNotification</code> || On startup and reconnect || Register with the CSMS (vendor/model); honours the returned retry interval
+|-
+| <code>Heartbeat</code> || Periodically || Keep‑alive
+|-
+| <code>StatusNotification</code> || On state change || Report connector status (Available, Preparing, Charging, Finishing, etc.)
+|-
+| <code>StartTransaction</code> || On session start || Begin a session; the CSMS returns a transaction id
+|-
+| <code>MeterValues</code> || While charging || Report energy (Wh), power (kW), and per‑phase current (A)
+|-
+| <code>StopTransaction</code> || On session end || End the session and report final energy and reason
+|}
+
+=== Commands handled (CSMS → Charge Point) ===
+
+{| class="wikitable"
+! Message !! Effect
+|-
+| <code>RemoteStartTransaction</code> || Start charging (requires cable and car connected)
+|-
+| <code>RemoteStopTransaction</code> || Stop the current session
+|-
+| <code>Reset</code> || Hard = clear all state; Soft = stop charging only
+|-
+| <code>UnlockConnector</code> || Simulate unlocking the connector
+|-
+| <code>ChangeAvailability</code> || Mark a connector operative/inoperative
+|}
+
+=== Reported connector statuses ===
+
+<code>Available</code>, <code>Preparing</code>, <code>Charging</code>, <code>Finishing</code>, <code>Suspended_EV</code>, <code>Unavailable</code>.
+
+=== Status logic ===
+
+<pre>
+Cable disconnected            → Available
+Cable connected, no car       → Preparing
+Car connected, not charging   → Suspended_EV
+Actively charging             → Charging
+Session finishing (soft stop) → Finishing
+Connector inoperative         → Unavailable
+</pre>
+
+== Troubleshooting ==
+
+{| class="wikitable"
+! Symptom !! Things to check
+|-
+| Repeated reconnect attempts || Ensure the CSMS (or OCPPProxy) is reachable at <code>ocpp_url</code>; check the OCPP log.
+|-
+| Web UI not reachable || Verify the service is running and the configured <code>port</code> (5000) is open.
+|-
+| Cannot start a session || Both the cable and the car must be connected first.
+|-
+| Charging not authorised || Confirm the CSMS accepts the configured <code>id_tags</code>.
+|-
+| Logs growing large || Configure external log rotation (e.g. <code>logrotate</code>) for the JSON logs.
+|-
+| Service won't start || Inspect <code>/var/log/charger/chargepoint.stderr</code> and <code>journalctl -u charger-chargepoint</code>; confirm dependencies and the config path.
+|}
+
+== Running Multiple Charge Points ==
+
+Run several simulators on one host by giving each its own config file with a distinct <code>name</code>, <code>port</code>, and <code>database</code> (and, if desired, separate log paths). Start each with its own <code>--config</code> argument or its own systemd unit.
+
+== Quick Deployment Checklist ==
+
+# Install Python 3 and run <code>pip install flask flask-socketio ocpp websockets</code>.
+# Create <code>/opt/charger/ChargePoint/</code>, <code>/opt/charger/data/</code>, and <code>/var/log/charger/</code>.
+# Add a config file (e.g. <code>config.json</code>) with the station <code>name</code>, <code>port</code>, and <code>database</code>.
+# Install and enable the systemd service.
+# Open the web UI at <code>http://&lt;host&gt;:5000</code>.
+# In '''Settings''', set the <code>ocpp_url</code> to your CSMS (or OCPPProxy) and the number of connectors.
+# Use the Station Control page to connect the cable and car, then start a session.

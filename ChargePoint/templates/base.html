@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ station_name }} - Charge Point</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="dashboard-container">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <svg class="brand-logo" viewBox="0 0 220 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cyb0rg42 Charging">
+        <defs>
+          <linearGradient id="cybHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#06b6d4"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <polygon points="30,2 56,17 56,47 30,62 4,47 4,17" fill="#151a2e" stroke="url(#cybHexGrad)" stroke-width="2.5"/>
+        <polygon points="34,10 19,34 27,34 23,54 41,27 32,27" fill="#f59e0b"/>
+        <circle cx="30" cy="2" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="17" r="2.2" fill="#06b6d4"/>
+        <circle cx="56" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="30" cy="62" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="47" r="2.2" fill="#a78bfa"/>
+        <circle cx="4" cy="17" r="2.2" fill="#06b6d4"/>
+        <text x="70" y="30" font-family="'Courier New', Consolas, monospace" font-size="22" font-weight="700" fill="#ffffff">Cyb0rg42</text>
+        <text x="70" y="49" font-family="'Courier New', Consolas, monospace" font-size="11" font-weight="700" fill="#06b6d4" letter-spacing="3">CHARGING</text>
+      </svg>
+      <hr class="logo-divider">
+      <span class="logo-subtext">Charge Point ({{ station_name }})</span>
+      <hr class="logo-divider">
+    </div>
+    <nav class="nav-menu">
+      <h3 class="nav-section-title">Controls</h3>
+      <ul class="nav-list">
+        <li><a href="{{ url_for('index') }}" class="nav-item{% if request.endpoint == 'index' %} active{% endif %}">
+          <span class="nav-icon">⚡</span><span class="nav-label">Station Control</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Monitoring</h3>
+      <ul class="nav-list">
+        <li><a href="{{ url_for('stats') }}" class="nav-item{% if request.endpoint == 'stats' %} active{% endif %}">
+          <span class="nav-icon">📊</span><span class="nav-label">Statistics</span>
+        </a></li>
+        <li><a href="{{ url_for('ocpp_logs_page') }}" class="nav-item{% if request.endpoint == 'ocpp_logs_page' %} active{% endif %}">
+          <span class="nav-icon">📋</span><span class="nav-label">OCPP Log</span>
+        </a></li>
+      </ul>
+      <h3 class="nav-section-title">Configuration</h3>
+      <ul class="nav-list">
+        <li><a class="nav-item" onclick="openConfig()" style="cursor:pointer;">
+          <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
+        </a></li>
+        <li><a href="{{ url_for('equipment_page') }}" class="nav-item{% if request.endpoint == 'equipment_page' %} active{% endif %}">
+          <span class="nav-icon">🗄️</span><span class="nav-label">Equipment Database</span>
+        </a></li>
+        <li><a href="{{ url_for('meter_types_page') }}" class="nav-item{% if request.endpoint == 'meter_types_page' %} active{% endif %}">
+          <span class="nav-icon">📟</span><span class="nav-label">Meter Types</span>
+        </a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version">OCPP Station v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <header class="top-header">
+      <div class="header-left">
+        <h1 class="page-title">{% block page_title %}Station Control{% endblock %}</h1>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-reboot" onclick="sendReboot()" id="btn-reboot" title="Reconnect and send BootNotification">🔄 Reboot</button>
+        <div class="status-badge" id="station-status">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Online</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="dashboard-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<!-- Configuration Modal -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Station Configuration</span>
+      <button class="modal-close" onclick="closeConfig()">&times;</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Vendor</label>
+      <select id="cfg-vendor"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Model</label>
+      <select id="cfg-model"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Meter Type</label>
+      <select id="cfg-meter-type"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>OCPP Backend URL</label>
+      <input type="text" id="cfg-ocpp-url" placeholder="ws://localhost:9000/ocpp">
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Number of Connectors</label>
+      <input type="number" id="cfg-num-connectors" step="1" min="1" max="10">
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>ID Tags (comma-separated)</label>
+      <input type="text" id="cfg-id-tags" placeholder="TAG1, TAG2">
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Max kWh per session</label>
+      <input type="number" id="cfg-max-kwh" step="0.1" min="0">
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Min kWh per session</label>
+      <input type="number" id="cfg-min-kwh" step="0.1" min="0">
+    </div>
+    <div id="config-status" style="margin-top:8px;font-size:12px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeConfig()">Close</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Configuration Modal ──
+function _cfgPopulateVendors(selectedVendor, selectedModel) {
+  return $.getJSON("/api/vendors").then(function(vendors) {
+    const $v = $("#cfg-vendor");
+    $v.empty();
+    let matched = false;
+    (vendors || []).forEach(function(v) {
+      const opt = $("<option>").attr("value", v.name).attr("data-id", v.id).text(v.name);
+      if (v.name === selectedVendor) { opt.prop("selected", true); matched = true; }
+      $v.append(opt);
+    });
+    if (selectedVendor && !matched) {
+      $v.append($("<option>").attr("value", selectedVendor).text(selectedVendor + " (custom)").prop("selected", true));
+    }
+    return _cfgPopulateModels(selectedModel);
+  });
+}
+
+function _cfgPopulateModels(selectedModel) {
+  const vid = $("#cfg-vendor").find(":selected").attr("data-id");
+  const $m = $("#cfg-model");
+  function fill(models) {
+    $m.empty();
+    let matched = false;
+    (models || []).forEach(function(m) {
+      const opt = $("<option>").attr("value", m.name).text(m.name);
+      if (m.name === selectedModel) { opt.prop("selected", true); matched = true; }
+      $m.append(opt);
+    });
+    if (selectedModel && !matched) {
+      $m.append($("<option>").attr("value", selectedModel).text(selectedModel + " (custom)").prop("selected", true));
+    }
+  }
+  if (!vid) { fill([]); return $.Deferred().resolve().promise(); }
+  return $.getJSON("/api/models?vendor_id=" + vid).then(fill);
+}
+
+function _cfgPopulateMeterTypes(selectedMeter) {
+  return $.getJSON("/api/meter-types").then(function(types) {
+    const $t = $("#cfg-meter-type");
+    $t.empty();
+    $t.append($("<option>").attr("value", "").text("— none —"));
+    let matched = false;
+    (types || []).forEach(function(t) {
+      const opt = $("<option>").attr("value", t.name).text(t.name);
+      if (t.name === selectedMeter) { opt.prop("selected", true); matched = true; }
+      $t.append(opt);
+    });
+    if (selectedMeter && !matched) {
+      $t.append($("<option>").attr("value", selectedMeter).text(selectedMeter + " (custom)").prop("selected", true));
+    }
+  });
+}
+
+$(document).on("change", "#cfg-vendor", function() {
+  _cfgPopulateModels(null);
+});
+
+function openConfig() {
+  $.getJSON("/api/config", function(cfg) {
+    _cfgPopulateVendors(cfg.charge_point_vendor, cfg.charge_point_model);
+    _cfgPopulateMeterTypes(cfg.charge_point_meter_type);
+    $("#cfg-ocpp-url").val(cfg.ocpp_url);
+    $("#cfg-num-connectors").val(cfg.num_connectors);
+    $("#cfg-id-tags").val((cfg.id_tags || []).join(", "));
+    $("#cfg-max-kwh").val(cfg.max_kwh);
+    $("#cfg-min-kwh").val(cfg.min_kwh);
+  });
+  document.getElementById('configModal').classList.add('open');
+}
+
+function closeConfig() {
+  document.getElementById('configModal').classList.remove('open');
+}
+
+function saveConfig() {
+  const payload = {
+    charge_point_vendor: $("#cfg-vendor").val(),
+    charge_point_model: $("#cfg-model").val(),
+    charge_point_meter_type: $("#cfg-meter-type").val(),
+    ocpp_url: $("#cfg-ocpp-url").val(),
+    num_connectors: parseInt($("#cfg-num-connectors").val(), 10),
+    id_tags: $("#cfg-id-tags").val(),
+    max_kwh: parseFloat($("#cfg-max-kwh").val()),
+    min_kwh: parseFloat($("#cfg-min-kwh").val())
+  };
+  $.ajax({
+    url: "/api/config", method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify(payload)
+  }).done(function() {
+    $("#config-status").html('<span style="color:var(--accent-green)">Configuration saved</span>');
+    setTimeout(function() { $("#config-status").empty(); }, 3000);
+  }).fail(function() {
+    $("#config-status").html('<span style="color:var(--accent-red)">Save failed</span>');
+  });
+}
+
+// ── Reboot (send BootNotification) ──
+function sendReboot() {
+  const btn = document.getElementById('btn-reboot');
+  btn.disabled = true;
+  btn.textContent = '🔄 Rebooting…';
+  $.ajax({
+    url: "/api/register", method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({})
+  }).done(function() {
+    btn.textContent = '✅ Boot Sent';
+    setTimeout(function() { btn.textContent = '🔄 Reboot'; btn.disabled = false; }, 3000);
+  }).fail(function() {
+    btn.textContent = '❌ Failed';
+    setTimeout(function() { btn.textContent = '🔄 Reboot'; btn.disabled = false; }, 3000);
+  });
+}
+
+// Close modal on overlay click
+document.getElementById('configModal').addEventListener('click', function(e) {
+  if (e.target === this) closeConfig();
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
+

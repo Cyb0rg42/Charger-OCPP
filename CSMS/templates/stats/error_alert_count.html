@@ -1,0 +1,23 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Error/Alert Count</h2>
+<div class="row mb-3">
+  <div class="col">
+    <div class="card border-danger h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-danger mb-1" style="font-size: 13px;">Errors/Alerts</div>
+        <div class="stat-value text-danger" id="stat-error-count">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $.getJSON('/api/stats/error_alert_count', function(data) {
+    $('#stat-error-count').text(data.error_count || 0);
+  });
+});
+</script>
+{% endblock %}

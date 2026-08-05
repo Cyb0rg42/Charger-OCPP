@@ -1,0 +1,427 @@
+= CSMS User Manual =
+
+The '''CSMS''' (''Central System Management System'') is an [https://www.openchargealliance.org/ OCPP 1.6] Central System for managing and monitoring electric‑vehicle (EV) charging infrastructure. It acts as the backend that charge points connect to over WebSocket, and it provides a web interface for operators to control chargers, track charging sessions, manage RFID authorization, calculate costs, and optimise charging using dynamic electricity tariffs.
+
+This manual describes how to '''install''', '''configure''', and '''use''' the CSMS.
+
+__TOC__
+
+== Overview ==
+
+The CSMS performs the following core functions:
+
+* '''Charge point communication''' — speaks OCPP 1.6 to charge points over WebSocket (default port '''9000''').
+* '''Web interface & REST API''' — operator dashboard and JSON API (default port '''9001''').
+* '''Session tracking''' — records charging transactions with detailed meter values (energy, power, current per phase, temperature).
+* '''RFID authorization''' — manages the whitelist of RFID cards/tags allowed to charge.
+* '''Smart charging''' — integrates with [https://www.zonneplan.nl/ Zonneplan] to fetch hourly electricity tariffs and find the cheapest charging window.
+* '''Cost calculation''' — computes charging costs from hourly electricity prices (with a configurable default tariff).
+* '''Email notifications''' — sends alerts for boot, fault, connect/disconnect, and transaction events.
+* '''Event & message logging''' — logs all OCPP messages and system events for auditing and troubleshooting.
+
+=== Architecture ===
+
+<pre>
+Charge Point  ──(OCPP / WebSocket :9000)──►  central_system.py  ──►  cs_db.py  ──►  SQLite DB
+                                                                                    ▲
+Web Browser   ──(HTTP :9001)───────────────►  csms.py (Flask)  ──────────────────────┘
+
+External services:
+  Zonneplan API  ──►  hourly electricity tariffs
+  SMTP server    ──►  email notifications
+</pre>
+
+{| class="wikitable"
+! Component !! File !! Responsibility
+|-
+| Web GUI + REST API || <code>csms.py</code> || Flask web server and JSON endpoints (entry point)
+|-
+| OCPP server || <code>central_system.py</code> || OCPP 1.6 WebSocket server and message handlers
+|-
+| Database layer || <code>cs_db.py</code> || SQLite schema and data access
+|-
+| Email notifications || <code>mail_notify.py</code> || SMTP delivery of event notifications
+|-
+| Zonneplan integration || <code>zonneplan.py</code> || Login flow and tariff retrieval
+|}
+
+== Installation ==
+
+=== Requirements ===
+
+* '''Python 3''' (the application uses f‑strings, type hints, and <code>asyncio</code>).
+* Python packages listed in <code>requirements.txt</code>:
+
+{| class="wikitable"
+! Package !! Purpose
+|-
+| <code>flask</code> || Web framework for the UI and REST API
+|-
+| <code>ocpp</code> || OCPP 1.6 protocol implementation
+|-
+| <code>websockets</code> || WebSocket server for OCPP connections
+|-
+| <code>pyyaml</code> || YAML configuration file parsing
+|-
+| <code>requests</code> || HTTP client for the Zonneplan API
+|-
+| <code>python-dateutil</code> || Date/time parsing utilities
+|}
+
+=== Install steps ===
+
+# Create the application and data directories:
+#: <pre>sudo mkdir -p /opt/charger/CSMS /opt/charger/data /var/log/charger</pre>
+# Copy the CSMS source files into <code>/opt/charger/CSMS/</code>.
+# (Recommended) create a virtual environment and install dependencies:
+#: <pre>cd /opt/charger/CSMS
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt</pre>
+# Place a configuration file (see [[#Configuration]]) in the CSMS directory, e.g. <code>config_instance1.yaml</code>.
+
+=== Running manually ===
+
+The application is started from <code>csms.py</code>. A configuration file can be supplied with the <code>-c</code> / <code>--config</code> option:
+
+<pre>
+python3 csms.py --config /opt/charger/CSMS/config_instance1.yaml
+</pre>
+
+If no <code>--config</code> is given, built‑in defaults are used:
+
+{| class="wikitable"
+! Setting !! Default
+|-
+| <code>server_name</code> || <code>"Backend"</code>
+|-
+| <code>database_path</code> || <code>/opt/charger/data/csms.db</code>
+|-
+| <code>web_port</code> || <code>9001</code>
+|-
+| <code>ocpp_port</code> || <code>9000</code>
+|}
+
+On first start the database schema is created automatically. Once running, open the web interface at:
+
+: <code>http://&lt;host&gt;:9001</code>
+
+=== Running as a systemd service ===
+
+A service unit is provided (<code>systemd/charger-csms.service</code>):
+
+<pre>
+[Unit]
+Description=Charger Point Management System (CSMS)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/charger/CSMS
+ExecStart=/usr/bin/python3 /opt/charger/CSMS/csms.py
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=file:/var/log/charger/csms.stdout
+StandardError=file:/var/log/charger/csms.stderr
+
+[Install]
+WantedBy=multi-user.target
+</pre>
+
+To install and enable the service:
+
+<pre>
+sudo cp systemd/charger-csms.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now charger-csms
+</pre>
+
+Useful management commands:
+
+<pre>
+sudo systemctl status charger-csms      # check status
+sudo systemctl restart charger-csms     # restart
+sudo journalctl -u charger-csms -f      # follow logs
+</pre>
+
+{{Note|To pass a config file to the service, append <code>--config /opt/charger/CSMS/config_instance1.yaml</code> to the <code>ExecStart</code> line.}}
+
+=== Log file locations ===
+
+{| class="wikitable"
+! Log !! Path
+|-
+| Service stdout || <code>/var/log/charger/csms.stdout</code>
+|-
+| Service stderr || <code>/var/log/charger/csms.stderr</code>
+|}
+
+== Configuration ==
+
+=== YAML configuration file ===
+
+The main configuration is a YAML file. Example (<code>config_instance1.yaml</code>):
+
+<pre>
+server_name: "Backend-1"
+database_path: "/opt/charger/data/central_system_1.db"
+web_port: 9001
+ocpp_port: 9000
+</pre>
+
+{| class="wikitable"
+! Key !! Default !! Description
+|-
+| <code>server_name</code> || <code>Backend</code> || Display name shown in the web interface header
+|-
+| <code>database_path</code> || <code>/opt/charger/data/csms.db</code> || Path to the SQLite database file
+|-
+| <code>web_port</code> || <code>9001</code> || Port for the Flask web interface (HTTP)
+|-
+| <code>ocpp_port</code> || <code>9000</code> || Port for the OCPP WebSocket server
+|}
+
+{{Note|If the OCPP port has been changed from the web interface, the value stored in the database takes precedence over the YAML/default value at startup.}}
+
+=== Running multiple instances ===
+
+Multiple CSMS instances can run on the same host by giving each its own configuration file with distinct <code>database_path</code>, <code>web_port</code>, and <code>ocpp_port</code> values (for example <code>config_instance1.yaml</code> and <code>config_instance2.yaml</code>). Run each with its own <code>--config</code> argument or its own systemd unit.
+
+=== OCPP configuration (web UI) ===
+
+Open '''OCPP Config''' in the web interface to adjust protocol settings without editing files:
+
+* '''Heartbeat interval''' — expected keep‑alive period from chargers.
+* '''Connection expiration''' — when a charger is considered offline.
+* '''OCPP port''' — the WebSocket listening port; this can be changed at runtime and is persisted in the database.
+
+=== Email notification configuration ===
+
+Configure email alerts on the '''Mail Config''' page. Settings are stored in the database and a '''test email''' can be sent to verify delivery.
+
+{| class="wikitable"
+! Setting !! Description
+|-
+| <code>enabled</code> || Enable/disable email notifications
+|-
+| <code>protocol</code> || <code>smtp</code>, <code>starttls</code>, or <code>smtps</code>
+|-
+| <code>host</code> / <code>port</code> || SMTP server address and port
+|-
+| <code>from</code> || Sender email address
+|-
+| <code>username</code> / <code>password</code> || SMTP authentication credentials (password masked in the UI)
+|-
+| <code>recipients</code> || One or more recipient addresses
+|-
+| <code>notify_boot</code> || Notify on charger boot
+|-
+| <code>notify_faulted</code> || Notify when a connector faults
+|-
+| <code>notify_connect</code> / <code>notify_disconnect</code> || Notify on charger connect/disconnect
+|-
+| <code>notify_start_transaction</code> / <code>notify_end_transaction</code> || Notify on session start/stop
+|-
+| <code>notify_ev_suspended</code> || Notify when the EV stops drawing power (e.g. battery full)
+|}
+
+=== Zonneplan configuration ===
+
+Zonneplan integration provides hourly electricity tariffs for smart charging and cost calculation. When no tariff data is available, a default of '''€0.30/kWh''' is used (configurable in app settings).
+
+Set it up from the '''Zonneplan Config''' page:
+
+# Enter your Zonneplan account '''email''' and start the login. Zonneplan emails a login link.
+# Click the link in your inbox, then '''verify''' in the CSMS to complete the OAuth2 authentication.
+# '''Set up the connection''' by selecting your electricity connection.
+
+Once connected, the CSMS periodically fetches hourly tariffs (stored in the database) and uses them for cost breakdowns and smart‑charging recommendations. Tokens are refreshed automatically.
+
+== Using the Web Interface ==
+
+The web interface is available at <code>http://&lt;host&gt;:9001</code>. The main pages are:
+
+{| class="wikitable"
+! Page !! Description
+|-
+| '''Dashboard''' (<code>/</code>) || Overview of chargers and their most recent active/completed sessions
+|-
+| '''Charging''' (<code>/charging</code>) || Live charging dashboard with real‑time power and energy
+|-
+| '''Charge Point''' (<code>/chargepoint/&lt;id&gt;</code>) || Detail view of a single charger
+|-
+| '''Charge Point Config''' (<code>/chargepoint-config</code>) || Register and configure chargers and assign them to sites
+|-
+| '''Charge Values''' (<code>/charge-values</code>) || Per‑charger phase count, max amperage (L1/L2/L3), and voltage
+|-
+| '''Transactions''' (<code>/transactions-mgmt</code>) || Charging session history and management
+|-
+| '''Events''' (<code>/events</code>) || OCPP events and alerts, searchable by charger, command, and severity
+|-
+| '''Logs''' (<code>/logs</code>) || System event log
+|-
+| '''RFID''' (<code>/rfid</code>) || RFID card management and bulk import
+|-
+| '''Cars''' (<code>/car-config</code>) || EV profiles (battery capacity, efficiency, license plate)
+|-
+| '''Hardware''' (<code>/hardware</code>) || Charger hardware information
+|-
+| '''Statistics''' (<code>/stats</code>) || Statistics dashboard (see [[#Statistics]])
+|-
+| '''Zonneplan''' (<code>/zonneplan</code>) || Tariff view
+|-
+| '''Settings''' (<code>/settings</code>) || General application settings
+|-
+| '''OCPP / Mail / Zonneplan Config''' || Protocol, email, and tariff configuration pages
+|}
+
+=== Managing charge points ===
+
+Charge points connect automatically over OCPP. From the charge point pages you can view connector status, hardware details, and the connection's online/offline state, and you can remove a charger that is no longer in use.
+
+=== Controlling a charging session ===
+
+When a charger is connected over OCPP, the following remote commands are available from its detail page:
+
+* '''Remote Start''' — begin a charging session.
+* '''Remote Stop''' — end the active session.
+* '''Reset''' — soft or hard reboot of the charger.
+* '''Unlock Connector''' — release the charging cable.
+* '''Change Availability''' — enable or disable a connector.
+* '''Get Configuration''' — query the charger's OCPP configuration keys.
+
+=== Managing RFID cards ===
+
+On the '''RFID''' page you can:
+
+* List all registered cards.
+* Add, edit, or delete cards (owner, billing account, blocked flag, optional site restriction).
+* '''Bulk import''' multiple RFID records.
+
+When a charger reads an RFID tag, it is validated against this whitelist; blocked cards are rejected.
+
+=== Managing transactions ===
+
+The '''Transactions''' page lists charging sessions with start/stop times, energy delivered, the RFID used, and stop reason. For each session you can:
+
+* View detailed meter values and a charging timeline.
+* See an hourly '''cost breakdown''' (when Zonneplan tariffs are available).
+* Assign a '''car''' to estimate distance travelled from the energy used.
+* Edit or delete the session, or force‑close an active session if needed.
+
+=== Smart charging ===
+
+Using a car profile and the Zonneplan tariff forecast, the CSMS can compute the cheapest charging window. Provide the car, the current battery percentage, and the charging power (kW); the system returns the recommended start/end times and estimated cost. Charging schedules can also be created, edited, and deleted.
+
+== Statistics ==
+
+The '''Statistics''' dashboard aggregates session data into the following views:
+
+{| class="wikitable"
+! Statistic !! Description
+|-
+| Revenue || Total charging revenue (EUR)
+|-
+| CO₂ savings || Emissions avoided versus fossil fuel
+|-
+| Average energy per session || Mean kWh per session
+|-
+| Average session duration || Mean session length
+|-
+| Energy by connector || Energy distribution across connectors
+|-
+| Utilization rate || Percentage of time chargers are in use
+|-
+| Unique users || Count of distinct RFID users
+|-
+| Peak concurrent sessions || Maximum simultaneous charging sessions
+|-
+| Most active hour || Time of day with the most charging
+|-
+| Error / alert count || Number of faulted‑connector incidents
+|}
+
+== OCPP Support Reference ==
+
+The CSMS implements the following OCPP 1.6 actions.
+
+=== Messages received from charge points ===
+
+{| class="wikitable"
+! Action !! Purpose
+|-
+| <code>BootNotification</code> || Charger startup info (vendor, model, firmware)
+|-
+| <code>Heartbeat</code> || Keep‑alive signal
+|-
+| <code>StatusNotification</code> || Connector status changes (Preparing, Charging, Faulted, etc.)
+|-
+| <code>Authorize</code> || RFID authorization check
+|-
+| <code>StartTransaction</code> || Charging session started
+|-
+| <code>StopTransaction</code> || Charging session ended
+|-
+| <code>MeterValues</code> || Energy, power, current, and temperature measurements
+|-
+| <code>DataTransfer</code> || Vendor‑specific messages
+|}
+
+=== Commands sent to charge points ===
+
+{| class="wikitable"
+! Action !! Purpose
+|-
+| <code>RemoteStartTransaction</code> || Start a charging session
+|-
+| <code>RemoteStopTransaction</code> || Stop a charging session
+|-
+| <code>Reset</code> || Soft/hard reboot
+|-
+| <code>UnlockConnector</code> || Unlock the connector cable
+|-
+| <code>ChangeAvailability</code> || Enable/disable a connector
+|-
+| <code>ChangeConfiguration</code> || Modify a charger setting
+|-
+| <code>GetConfiguration</code> || Query charger configuration
+|-
+| <code>TriggerMessage</code> || Request a status or meter update
+|-
+| <code>ClearCache</code> || Clear the charger's authorization cache
+|}
+
+=== Captured meter measurands ===
+
+* <code>Energy.Active.Import.Register</code> — cumulative energy (Wh/kWh)
+* <code>Power.Active.Import</code> — instantaneous power (W)
+* <code>Current.Import.L1 / L2 / L3</code> — current per phase (A)
+* <code>Temperature</code> — charger internal temperature (°C)
+
+== Troubleshooting ==
+
+{| class="wikitable"
+! Symptom !! Things to check
+|-
+| Chargers not connecting || Confirm the charger points to <code>ws://&lt;host&gt;:9000</code> and that the OCPP port matches <code>ocpp_port</code>; check firewall rules.
+|-
+| Web UI not reachable || Verify the service is running and that <code>web_port</code> (9001) is open.
+|-
+| No cost data on sessions || Ensure Zonneplan is authenticated and tariffs are being fetched; otherwise the default tariff (€0.30/kWh) is used.
+|-
+| Emails not sent || Use the '''test email''' button on the Mail Config page; verify SMTP host, port, protocol, and credentials.
+|-
+| Service won't start || Inspect <code>/var/log/charger/csms.stderr</code> and <code>journalctl -u charger-csms</code>; confirm dependencies are installed and the config path is correct.
+|}
+
+== Quick Deployment Checklist ==
+
+# Install Python 3 and run <code>pip install -r requirements.txt</code>.
+# Create <code>/opt/charger/CSMS/</code>, <code>/opt/charger/data/</code>, and <code>/var/log/charger/</code>.
+# Add a configuration file (e.g. <code>config_instance1.yaml</code>).
+# Install and enable the systemd service.
+# Open the web UI at <code>http://&lt;host&gt;:9001</code>.
+# Confirm the OCPP port (9000) matches your chargers' configuration.
+# (Optional) Configure email notifications on the Mail Config page.
+# (Optional) Authenticate Zonneplan on the Zonneplan Config page.

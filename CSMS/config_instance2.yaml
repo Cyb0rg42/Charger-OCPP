@@ -1,0 +1,4 @@
+server_name: "Backend-2"
+database_path: "/opt/charger/data/central_system_2.db"
+web_port: 9011
+ocpp_port: 9010

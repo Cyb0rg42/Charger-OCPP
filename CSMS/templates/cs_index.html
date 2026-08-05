@@ -1,0 +1,202 @@
+{% extends "cs_base.html" %}
+{% block content %}
+
+<h2 class="section-title">Connected Charge Points</h2>
+<div id="cp-cards" class="cards-grid"></div>
+
+<!-- Recent Transactions -->
+<h2 class="section-title">Recent Transactions</h2>
+<div class="table-container">
+  <div style="max-height: 500px; overflow-y: auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Charger</th>
+          <th>Conn</th>
+          <th>IDTag</th>
+          <th>Start</th>
+          <th>Stop</th>
+          <th>Cable</th>
+          <th>Session</th>
+          <th>Energy (Wh)</th>
+          <th>Cost</th>
+          <th>€/KM</th>
+          <th>KM</th>
+          <th>Car</th>
+        </tr>
+      </thead>
+      <tbody id="txn-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(t) {
+  if (t === null || t === undefined) return '';
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+  return String(t).replace(/[&<>"']/g, m => map[m]);
+}
+
+function getStatusClass(s) {
+  const status = (s || '').toLowerCase();
+  if (status === 'available' || status === 'charging') return 'status-available';
+  if (status === 'preparing' || status === 'suspended.ev') return 'status-preparing';
+  if (status === 'finishing' || status === 'suspended.evse') return 'status-suspended';
+  if (status === 'faulted') return 'status-faulted';
+  return 'status-available';
+}
+
+function getStatusLabel(s) {
+  if ((s || '').toLowerCase() === 'available') return 'Ready';
+  return s || 'Unknown';
+}
+
+function renderConnectorStatuses(connectors) {
+  if (!connectors || connectors.length === 0) {
+    return '<span style="color: var(--text-secondary);">—</span>';
+  }
+  const filtered = connectors.filter(c => parseInt(c.connector_id, 10) !== 0);
+  if (filtered.length === 0) {
+    return '<span style="color: var(--text-secondary);">—</span>';
+  }
+  let html = '';
+  filtered.forEach(c => {
+    const statusClass = getStatusClass(c.status);
+    html += '<div class="connector-status"><span class="status-indicator ' + statusClass + '"></span>' + 
+            'Connector ' + c.connector_id + ': <strong>' + escapeHtml(getStatusLabel(c.status)) + '</strong></div>';
+  });
+  return html;
+}
+
+function formatDate(date) {
+  return fmtDate(date);
+}
+
+function calculateDuration(start, end) {
+  if (!start || !end) return '-';
+  const s = new Date(start);
+  const e = new Date(end);
+  const diff = Math.floor((e - s) / 1000);
+  if (diff <= 0) return '-';
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  return hours + 'h ' + minutes + 'm';
+}
+
+function loadChargePoints() {
+  $.getJSON("/api/chargepoints", function(cps) {
+    const container = $("#cp-cards");
+    container.empty();
+    if (cps.length === 0) {
+      container.html('<div style="color: var(--text-secondary); padding: 20px; grid-column: 1 / -1;">No charge points registered.</div>');
+      return;
+    }
+    cps.forEach(function(cp) {
+      const online = cp.online;
+      const badge = online ? '<span class="status-badge-inline badge-online">Online</span>' : '<span class="status-badge-inline badge-offline">Offline</span>';
+      const connectorsHtml = renderConnectorStatuses(cp.connectors);
+      
+      container.append(
+        '<div class="status-card" data-cp-id="' + escapeHtml(cp.cp_id) + '">' +
+          '<div class="status-card-header">' +
+            '<div class="status-card-title">' + escapeHtml(cp.cp_id) + '</div>' +
+            badge +
+          '</div>' +
+          '<div class="status-content">' +
+            '<div class="status-item">' +
+              '<span class="status-item-label">Vendor:</span>' +
+              '<span class="status-item-value">' + escapeHtml(cp.vendor || '-') + '</span>' +
+            '</div>' +
+            '<div class="status-item">' +
+              '<span class="status-item-label">Model:</span>' +
+              '<span class="status-item-value">' + escapeHtml(cp.model || '-') + '</span>' +
+            '</div>' +
+            '<div class="status-item">' +
+              '<span class="status-item-label">Heartbeat:</span>' +
+              '<span class="status-item-value">' + fmtDate(cp.last_heartbeat) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 5px;">' +
+            connectorsHtml +
+          '</div>' +
+          '<div class="card-actions">' +
+            '<a href="/chargepoint/' + encodeURIComponent(cp.cp_id) + '" class="btn btn-primary" style="flex: 1;">Details & Commands</a>' +
+          '</div>' +
+        '</div>'
+      );
+    });
+  });
+}
+
+function navigateToChargePoint(cpId) {
+  window.location.href = '/chargepoint/' + encodeURIComponent(cpId);
+}
+
+// Delegated click handler: reads the charge point id back out of the
+// data-cp-id attribute (never concatenated into an inline event-handler
+// string, which would let a malicious charge point id break out of the
+// JS string literal even after HTML-escaping — HTML entities in an
+// attribute are decoded before the attribute's own onclick text is
+// parsed as JS).
+$("#cp-cards").on("click", ".status-card", function(e) {
+  if ($(e.target).closest("a").length) return; // let the "Details" link navigate itself
+  const cpId = $(this).attr("data-cp-id");
+  if (cpId) navigateToChargePoint(cpId);
+});
+
+function loadTransactions() {
+  $.getJSON("/api/transactions", function(txns) {
+    const tbody = $("#txn-body");
+    tbody.empty();
+    if (!txns || txns.length === 0) {
+      tbody.html('<tr><td colspan="15" style="text-align: center; color: var(--text-secondary); padding: 20px;">No transactions found.</td></tr>');
+      return;
+    }
+    txns.slice(0, 50).forEach(function(txn) {
+      let energy = '-';
+      if (txn.meter_stop !== null && txn.meter_start !== null) {
+        const wh = txn.meter_stop - txn.meter_start;
+        energy = (wh >= 0) ? (wh / 1000).toFixed(3) : '-';
+      }
+      var kmVal = (txn.km != null) ? txn.km.toFixed(1) : '-';
+      var carLabel = txn.car_license_plate ? escapeHtml(txn.car_license_plate) : '-';
+      var costVal = (txn.cost_eur != null) ? '€ ' + txn.cost_eur.toFixed(2) : '-';
+      var costPerKm = (txn.cost_eur != null && txn.km != null && txn.km > 0) ? '€ ' + (txn.cost_eur / txn.km).toFixed(2) : '-';
+      tbody.append(
+        '<tr>' +
+          '<td>' + escapeHtml(txn.id || '-') + '</td>' +
+          '<td>' + escapeHtml(txn.cp_id || '-') + '</td>' +
+          '<td>' + (txn.connector_id || '-') + '</td>' +
+          '<td>' + escapeHtml(txn.assigned_to || '-') + '</td>' +
+          '<td>' + formatDate(txn.charge_session_start) + '</td>' +
+          '<td>' + formatDate(txn.charge_session_stop) + '</td>' +
+          '<td>' + calculateDuration(txn.started_at, txn.stopped_at) + '</td>' +
+          '<td>' + calculateDuration(txn.charge_session_start, txn.charge_session_stop) + '</td>' +
+          '<td>' + energy + '</td>' +
+          '<td>' + (txn.cost_eur != null ? '<a href="#" onclick="showCostDetail(' + txn.id + '); return false;" style="color: var(--text-primary); text-decoration: underline dotted;">' + costVal + '</a>' : '-') + '</td>' +
+          '<td>' + costPerKm + '</td>' +
+          '<td>' + kmVal + '</td>' +
+          '<td>' + carLabel + '</td>' +
+        '</tr>'
+      );
+    });
+  });
+}
+
+// Load data on page load
+$(document).ready(function() {
+  loadChargePoints();
+  loadTransactions();
+  
+  // Refresh data every 10 seconds
+  setInterval(function() {
+    loadChargePoints();
+    loadTransactions();
+  }, 10000);
+});
+</script>
+{% endblock %}

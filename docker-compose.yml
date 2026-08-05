@@ -1,0 +1,82 @@
+services:
+  ocppproxy:
+    build: ./OCPPProxy
+    container_name: charger-ocppproxy
+    ports:
+      - "4000:4000"   # web dashboard (from config "port")
+      - "9100:9100"   # OCPP listen port — charge points connect here
+    environment:
+      # Seeds the "Default Backend" row on first boot (empty data volume only —
+      # doesn't affect it once seeded). Points at csms1's service name rather
+      # than 127.0.0.1, which inside this container would mean itself.
+      PROXY_DEFAULT_BACKEND_URL: "ws://csms1:9000/ocpp"
+    volumes:
+      - ./OCPPProxy/config_example.yaml:/config/config.yaml:ro
+      - ocppproxy_data:/opt/charger/data
+      - ocppproxy_logs:/var/log/charger
+    restart: unless-stopped
+
+  # --- CSMS instances ---------------------------------------------------
+  # Add more by copying a block, giving it a new name/ports, and pointing
+  # it at its own config_instanceN.yaml (web_port/ocpp_port/database_path).
+
+  csms1:
+    build: ./CSMS
+    container_name: charger-csms1
+    ports:
+      - "9000:9000"   # ocpp_port
+      - "9001:9001"   # web_port
+    volumes:
+      - ./CSMS/config_instance1.yaml:/config/config.yaml:ro
+      - csms1_data:/opt/charger/data
+      - csms1_logs:/var/log/charger
+    restart: unless-stopped
+
+  csms2:
+    build: ./CSMS
+    container_name: charger-csms2
+    ports:
+      - "9010:9010"   # ocpp_port
+      - "9011:9011"   # web_port
+    volumes:
+      - ./CSMS/config_instance2.yaml:/config/config.yaml:ro
+      - csms2_data:/opt/charger/data
+      - csms2_logs:/var/log/charger
+    restart: unless-stopped
+
+  # --- ChargePoint instances ---------------------------------------------
+  # Add more the same way, using config_instanceN.json (port/database/logs).
+
+  chargepoint1:
+    build: ./ChargePoint
+    container_name: charger-chargepoint1
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./ChargePoint/config_instance1.json:/config/config.json:ro
+      - chargepoint1_data:/opt/charger/data
+      - chargepoint1_logs:/var/log/charger
+    restart: unless-stopped
+
+  chargepoint2:
+    build: ./ChargePoint
+    container_name: charger-chargepoint2
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./ChargePoint/config_instance2.json:/config/config.json:ro
+      - chargepoint2_data:/opt/charger/data
+      - chargepoint2_logs:/var/log/charger
+    restart: unless-stopped
+
+volumes:
+  ocppproxy_data:
+  ocppproxy_logs:
+  csms1_data:
+  csms1_logs:
+  csms2_data:
+  csms2_logs:
+  chargepoint1_data:
+  chargepoint1_logs:
+  chargepoint2_data:
+  chargepoint2_logs:

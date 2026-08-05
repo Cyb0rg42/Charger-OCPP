@@ -1,0 +1,10 @@
+{
+    "name": "CP_001",
+    "database": "/opt/charger/data/chargepoint1.db",
+    "port": 5000,
+    "logs": {
+        "ocpp_log": "/var/log/charger/stationocpp.log",
+        "access_log": "/var/log/charger/access.log",
+        "error_log": "/var/log/charger/error.log"
+    }
+}

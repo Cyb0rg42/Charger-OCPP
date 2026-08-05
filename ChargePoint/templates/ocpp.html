@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block page_title %}OCPP Log{% endblock %}
+{% block content %}
+
+<div class="filter-bar">
+  <input type="text" id="ocpp-search" placeholder="Search events…">
+  <button class="btn btn-primary" id="btn-search">Search</button>
+  <button class="btn btn-secondary" id="btn-clear">Clear</button>
+</div>
+
+<div class="log-container">
+  <div class="card-header-custom" style="padding:12px 20px 0;">
+    <span class="card-title-custom">OCPP Event Log</span>
+  </div>
+  <div class="log-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width:200px;">Timestamp</th>
+          <th style="width:90px;">Severity</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody id="ocpp-log-body"></tbody>
+    </table>
+  </div>
+  <div class="empty-state" id="no-logs" style="display:none;">No events found.</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function severityBadge(sev) {
+  const cls = {
+    'ERROR': 'badge-error',
+    'WARNING': 'badge-warning',
+    'INFO': 'badge-info',
+    'DEBUG': 'badge-idle',
+  };
+  return '<span class="badge ' + (cls[sev] || 'badge-idle') + '">' + sev + '</span>';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function loadLogs(query) {
+  const url = query ? "/api/ocpp-logs?q=" + encodeURIComponent(query) : "/api/ocpp-logs";
+  $.getJSON(url, function(logs) {
+    const tbody = document.getElementById('ocpp-log-body');
+    tbody.innerHTML = '';
+    if (logs.length === 0) {
+      document.getElementById('no-logs').style.display = 'block';
+      return;
+    }
+    document.getElementById('no-logs').style.display = 'none';
+    logs.forEach(function(log) {
+      const ts = (function(d){var dt=new Date(d),y=dt.getFullYear(),m=String(dt.getMonth()+1).padStart(2,'0'),dy=String(dt.getDate()).padStart(2,'0'),h=String(dt.getHours()).padStart(2,'0'),mn=String(dt.getMinutes()).padStart(2,'0'),s=String(dt.getSeconds()).padStart(2,'0');return y+'-'+m+'-'+dy+' '+h+':'+mn+':'+s})(log.timestamp);
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td style="color:var(--text-secondary); white-space:nowrap;">' + escapeHtml(ts) + '</td>' +
+        '<td>' + severityBadge(log.severity) + '</td>' +
+        '<td>' + escapeHtml(log.message) + '</td>';
+      tbody.appendChild(tr);
+    });
+  }).fail(function(xhr) {
+    // Surface fetch failures instead of silently leaving the last successful
+    // render on screen (which used to look like "nothing new is arriving").
+    const tbody = document.getElementById('ocpp-log-body');
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="3" style="color:var(--accent-red, #e55);">Failed to load logs: ' +
+      escapeHtml(xhr.statusText || 'request error') + '</td>';
+    tbody.prepend(tr);
+  });
+}
+
+document.getElementById('btn-search').addEventListener('click', function() {
+  loadLogs(document.getElementById('ocpp-search').value.trim());
+});
+
+document.getElementById('ocpp-search').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') loadLogs(this.value.trim());
+});
+
+document.getElementById('btn-clear').addEventListener('click', function() {
+  document.getElementById('ocpp-search').value = '';
+  loadLogs('');
+});
+
+setInterval(function() {
+  loadLogs(document.getElementById('ocpp-search').value.trim());
+}, 3000);
+
+loadLogs('');
+</script>
+{% endblock %}

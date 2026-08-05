@@ -1,0 +1,167 @@
+{% extends "cs_base.html" %}
+{% block content %}
+
+<h2 class="section-title">Hardware Monitoring</h2>
+
+<!-- Charge Point Selector (hidden when only one CP exists) -->
+<div id="cp-selector-wrapper" style="margin-bottom: 20px; display: none;">
+  <label for="cp-select" style="font-weight: 600; margin-right: 8px;">Charge Point:</label>
+  <select id="cp-select" class="form-select form-select-sm" style="width: auto; display: inline-block;">
+  </select>
+</div>
+
+<!-- Temperature Chart Card -->
+<div class="card" style="padding: 20px;">
+  <h5 style="margin-bottom: 15px;">Temperature</h5>
+  <div id="no-data-msg" class="text-muted" style="display: none; text-align: center; padding: 40px 0;">
+    No temperature data available for this charge point.
+  </div>
+  <div style="height: 400px; position: relative;">
+    <canvas id="tempChart"></canvas>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let tempChart = null;
+
+function initChart() {
+  const ctx = document.getElementById('tempChart').getContext('2d');
+  tempChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Temperature (°C)',
+        data: [],
+        borderColor: '#e74c3c',
+        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointHoverRadius: 5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { color: '#ccc' } }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Time (Amsterdam)', color: '#ccc' },
+          ticks: { color: '#aaa', maxRotation: 45, autoSkip: true, maxTicksLimit: 20 },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        y: {
+          title: { display: true, text: 'Temperature (°C)', color: '#ccc' },
+          ticks: { color: '#aaa' },
+          grid: { color: 'rgba(255,255,255,0.08)' },
+          beginAtZero: false
+        }
+      }
+    }
+  });
+}
+
+function loadTemperature(cpId) {
+  tempChart.data.datasets[0].label = 'Temperature - ' + cpId + ' (°C)';
+  $.getJSON('/api/temperature-history?cp_id=' + encodeURIComponent(cpId), function(data) {
+    const noDataMsg = document.getElementById('no-data-msg');
+    const canvas = document.getElementById('tempChart');
+
+    if (!data || data.length === 0) {
+      noDataMsg.style.display = 'block';
+      canvas.style.display = 'none';
+      if (tempChart) {
+        tempChart.data.labels = [];
+        tempChart.data.datasets[0].data = [];
+        tempChart.update();
+      }
+      return;
+    }
+
+    noDataMsg.style.display = 'none';
+    canvas.style.display = 'block';
+
+    const labels = data.map(function(d) {
+      if (!d.timestamp) return '';
+      try {
+        const dt = new Date(d.timestamp);
+        var m = String(dt.getMonth()+1).padStart(2,'0');
+        var day = String(dt.getDate()).padStart(2,'0');
+        var h = String(dt.getHours()).padStart(2,'0');
+        var min = String(dt.getMinutes()).padStart(2,'0');
+        return m + '-' + day + ' ' + h + ':' + min;
+      } catch(e) {
+        return d.timestamp;
+      }
+    });
+
+    const values = data.map(function(d) {
+      let v = parseFloat(d.value);
+      // Convert Fahrenheit to Celsius if unit indicates Fahrenheit
+      if (d.unit && d.unit.toLowerCase() === 'fahrenheit') {
+        v = (v - 32) * 5 / 9;
+      }
+      return Math.round(v * 10) / 10;
+    });
+
+    tempChart.data.labels = labels;
+    tempChart.data.datasets[0].data = values;
+    tempChart.update();
+  });
+}
+
+$(function() {
+  initChart();
+
+  // Fetch charge points, then decide whether to show selector
+  $.getJSON('/api/chargepoints', function(cps) {
+    if (!cps || cps.length === 0) {
+      document.getElementById('no-data-msg').style.display = 'block';
+      document.getElementById('tempChart').style.display = 'none';
+      return;
+    }
+
+    if (cps.length === 1) {
+      // Only one CP — load directly, no selector
+      loadTemperature(cps[0].cp_id);
+    } else {
+      // Multiple CPs — show selector
+      var sel = $('#cp-select');
+      cps.forEach(function(cp) {
+        sel.append($('<option>').val(cp.cp_id).text(cp.cp_id));
+      });
+      $('#cp-selector-wrapper').show();
+
+      sel.on('change', function() {
+        loadTemperature($(this).val());
+      });
+
+      // Auto-load first
+      loadTemperature(cps[0].cp_id);
+    }
+  });
+
+  // Auto-refresh every 30 seconds
+  setInterval(function() {
+    var cpId = $('#cp-select').val();
+    if (!cpId) {
+      // Single CP mode — get from chargepoints
+      $.getJSON('/api/chargepoints', function(cps) {
+        if (cps && cps.length > 0) {
+          loadTemperature(cps[0].cp_id);
+        }
+      });
+    } else {
+      loadTemperature(cpId);
+    }
+  }, 30000);
+});
+</script>
+{% endblock %}

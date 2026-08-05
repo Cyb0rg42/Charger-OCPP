@@ -1,0 +1,168 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h4 class="text-white mb-3">OCPP Configuration</h4>
+
+<div class="card mb-3 border-info">
+  <div class="card-header bg-info text-white">OCPP Settings</div>
+  <div class="card-body">
+    <form id="ocpp-config-form">
+      <div class="mb-4">
+        <label for="ocpp_port" class="form-label text-white fw-bold">OCPP WebSocket Port:</label>
+        <input type="number" class="form-control" id="ocpp_port" min="1" max="65535" step="1" value="9000">
+        <div class="form-text text-white-50">
+          The TCP port on which the backend listens for incoming OCPP WebSocket connections from charge points.
+          Changing this port will immediately restart the OCPP server on the new port.
+        </div>
+      </div>
+      <div class="mb-4">
+        <label for="heartbeat_interval" class="form-label text-white fw-bold">Heartbeat Interval:</label>
+        <input type="number" class="form-control" id="heartbeat_interval" min="0" step="1" value="30">
+        <div class="form-text text-white-50">
+          The time interval in <strong>seconds</strong> for how often a charge point should send a heartbeat to the backend.
+          This value is sent to the charge point in the BootNotification response.
+          The value 0 requests clients to use reasonable default values.
+        </div>
+      </div>
+      <div class="mb-4">
+        <label for="expiration" class="form-label text-white fw-bold">Expiration:</label>
+        <input type="number" class="form-control" id="expiration" min="0" step="1" value="1">
+        <div class="form-text text-white-50">
+          The amount of time in <strong>hours</strong> for how long a charge point should cache
+          the authorization info of an idTag in its local white list, if an expiry date is not explicitly set.
+          The value 0 disables this functionality (i.e. no expiry date will be set).
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Save</button>
+      <span id="save-status" class="ms-3"></span>
+    </form>
+  </div>
+</div>
+
+<!-- Port-change warning modal -->
+<div class="modal fade" id="portWarningModal" tabindex="-1" aria-labelledby="portWarningLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="portWarningLabel">Warning — Active Sessions</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="portWarningBody"></div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="portWarningConfirm">Change Port</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _originalPort = null;
+
+function loadConfig() {
+  $.getJSON("/api/ocpp-config", function(data) {
+    if (data.ocpp_port !== undefined) $("#ocpp_port").val(data.ocpp_port);
+    if (data.heartbeat_interval !== undefined) $("#heartbeat_interval").val(data.heartbeat_interval);
+    if (data.expiration !== undefined) $("#expiration").val(data.expiration);
+  });
+  $.getJSON("/api/ocpp-port/status", function(data) {
+    _originalPort = data.running_port;
+  });
+}
+
+function saveNonPortSettings() {
+  var payload = {
+    heartbeat_interval: $("#heartbeat_interval").val(),
+    expiration: $("#expiration").val()
+  };
+  $.ajax({
+    url: "/api/ocpp-config",
+    method: "PUT",
+    contentType: "application/json",
+    data: JSON.stringify(payload)
+  }).done(function() {
+    $("#save-status").html('<span class="text-success">Saved successfully</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 3000);
+  }).fail(function() {
+    $("#save-status").html('<span class="text-danger">Error saving</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 3000);
+  });
+}
+
+function doPortChange(newPort) {
+  $("#save-status").html('<span class="text-info">Restarting OCPP server…</span>');
+  $.ajax({
+    url: "/api/ocpp-port/restart",
+    method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({ port: newPort })
+  }).done(function(resp) {
+    _originalPort = newPort;
+    $("#save-status").html('<span class="text-success">OCPP server restarted on port ' + newPort + '</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 4000);
+  }).fail(function(xhr) {
+    var msg = xhr.responseJSON ? xhr.responseJSON.error : "Error restarting OCPP server";
+    $("#save-status").html('<span class="text-danger">' + msg + '</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 5000);
+  });
+}
+
+$("#ocpp-config-form").on("submit", function(e) {
+  e.preventDefault();
+  var newPort = parseInt($("#ocpp_port").val(), 10);
+  var portChanged = (_originalPort !== null && newPort !== _originalPort);
+
+  if (!portChanged) {
+    // No port change — just save everything normally
+    var payload = {
+      ocpp_port: $("#ocpp_port").val(),
+      heartbeat_interval: $("#heartbeat_interval").val(),
+      expiration: $("#expiration").val()
+    };
+    $.ajax({
+      url: "/api/ocpp-config",
+      method: "PUT",
+      contentType: "application/json",
+      data: JSON.stringify(payload)
+    }).done(function() {
+      $("#save-status").html('<span class="text-success">Saved successfully</span>');
+      setTimeout(function() { $("#save-status").empty(); }, 3000);
+    }).fail(function() {
+      $("#save-status").html('<span class="text-danger">Error saving</span>');
+      setTimeout(function() { $("#save-status").empty(); }, 3000);
+    });
+    return;
+  }
+
+  // Port changed — check for active sessions first
+  $.getJSON("/api/ocpp-port/status", function(status) {
+    saveNonPortSettings();
+
+    if (status.active_sessions > 0 || status.connected_cps.length > 0) {
+      var body = '<div class="alert alert-warning mb-3">' +
+        '<i class="bi bi-exclamation-triangle-fill me-2"></i>' +
+        'Changing the OCPP port will disconnect all connected charge points.</div>';
+      if (status.active_sessions > 0) {
+        body += '<p><strong>' + status.active_sessions + ' active charging session' +
+          (status.active_sessions > 1 ? 's' : '') + '</strong> will be interrupted.</p>';
+      }
+      if (status.connected_cps.length > 0) {
+        body += '<p>Connected charge points: <strong>' + status.connected_cps.join(', ') + '</strong></p>';
+      }
+      body += '<p>Change port from <strong>' + status.running_port + '</strong> to <strong>' + newPort + '</strong>?</p>';
+      $("#portWarningBody").html(body);
+      $("#portWarningConfirm").off("click").on("click", function() {
+        bootstrap.Modal.getInstance(document.getElementById("portWarningModal")).hide();
+        doPortChange(newPort);
+      });
+      new bootstrap.Modal(document.getElementById("portWarningModal")).show();
+    } else {
+      doPortChange(newPort);
+    }
+  });
+});
+
+loadConfig();
+</script>
+{% endblock %}

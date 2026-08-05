@@ -1,0 +1,177 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h4 class="text-white mb-3">Mail Notification Settings</h4>
+
+<div class="card mb-3 border-info">
+  <div class="card-header bg-info text-white">Mail Configuration</div>
+  <div class="card-body">
+    <form id="mail-config-form">
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="mail_enabled">
+        <label class="form-check-label text-white fw-bold" for="mail_enabled">Enable Notifications</label>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <label for="mail_protocol" class="form-label text-white">Protocol:</label>
+          <select class="form-select" id="mail_protocol">
+            <option value="smtp">smtp</option>
+            <option value="starttls">starttls</option>
+            <option value="smtps">smtps</option>
+          </select>
+        </div>
+        <div class="col-md-5">
+          <label for="mail_host" class="form-label text-white">Host:</label>
+          <input type="text" class="form-control" id="mail_host">
+        </div>
+        <div class="col-md-3">
+          <label for="mail_port" class="form-label text-white">Port:</label>
+          <input type="number" class="form-control" id="mail_port" min="1" max="65535" value="25">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="mail_from" class="form-label text-white">From:</label>
+        <input type="email" class="form-control" id="mail_from">
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label for="mail_username" class="form-label text-white">User name: <small class="text-white-50">(optional)</small></label>
+          <input type="text" class="form-control" id="mail_username">
+        </div>
+        <div class="col-md-6">
+          <label for="mail_password" class="form-label text-white">Password: <small class="text-white-50">(optional)</small></label>
+          <input type="password" class="form-control" id="mail_password">
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label for="mail_recipients" class="form-label text-white">Recipients:</label>
+        <textarea class="form-control" id="mail_recipients" rows="3" placeholder="Comma or semicolon separated email addresses"></textarea>
+      </div>
+
+      <hr class="border-secondary">
+      <label class="form-label text-white fw-bold mb-2">Notify when...</label>
+
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_boot">
+        <label class="form-check-label text-white-50" for="notify_boot">A charging station sends a boot notification</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_faulted">
+        <label class="form-check-label text-white-50" for="notify_faulted">A connector gets faulted</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_connect">
+        <label class="form-check-label text-white-50" for="notify_connect">A charging station connects</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_disconnect">
+        <label class="form-check-label text-white-50" for="notify_disconnect">A charging station disconnects</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_start_transaction">
+        <label class="form-check-label text-white-50" for="notify_start_transaction">A charging station starts a transaction</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="notify_ev_suspended">
+        <label class="form-check-label text-white-50" for="notify_ev_suspended">EV suspended charging</label>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="notify_end_transaction">
+        <label class="form-check-label text-white-50" for="notify_end_transaction">A charging station ends a transaction</label>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" id="btn-test-mail">Send Test Mail</button>
+      </div>
+      <span id="save-status" class="ms-3"></span>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadMailConfig() {
+  $.getJSON("/api/mail-config", function(cfg) {
+    $("#mail_enabled").prop("checked", cfg.enabled === "true");
+    $("#mail_protocol").val(cfg.protocol || "smtp");
+    $("#mail_host").val(cfg.host || "");
+    $("#mail_port").val(cfg.port || "25");
+    $("#mail_from").val(cfg["from"] || "");
+    $("#mail_username").val(cfg.username || "");
+    if (cfg.password && cfg.password !== "********") {
+      $("#mail_password").val(cfg.password);
+    } else if (cfg.password === "********") {
+      $("#mail_password").val("********");
+    }
+    $("#mail_recipients").val(cfg.recipients || "");
+    $("#notify_boot").prop("checked", cfg.notify_boot === "true");
+    $("#notify_faulted").prop("checked", cfg.notify_faulted === "true");
+    $("#notify_connect").prop("checked", cfg.notify_connect === "true");
+    $("#notify_disconnect").prop("checked", cfg.notify_disconnect === "true");
+    $("#notify_start_transaction").prop("checked", cfg.notify_start_transaction === "true");
+    $("#notify_ev_suspended").prop("checked", cfg.notify_ev_suspended === "true");
+    $("#notify_end_transaction").prop("checked", cfg.notify_end_transaction === "true");
+  });
+}
+
+$("#mail-config-form").on("submit", function(e) {
+  e.preventDefault();
+  var payload = {
+    enabled: $("#mail_enabled").is(":checked") ? "true" : "false",
+    protocol: $("#mail_protocol").val(),
+    host: $("#mail_host").val(),
+    port: $("#mail_port").val(),
+    from: $("#mail_from").val(),
+    username: $("#mail_username").val(),
+    password: $("#mail_password").val(),
+    recipients: $("#mail_recipients").val(),
+    notify_boot: $("#notify_boot").is(":checked") ? "true" : "false",
+    notify_faulted: $("#notify_faulted").is(":checked") ? "true" : "false",
+    notify_connect: $("#notify_connect").is(":checked") ? "true" : "false",
+    notify_disconnect: $("#notify_disconnect").is(":checked") ? "true" : "false",
+    notify_start_transaction: $("#notify_start_transaction").is(":checked") ? "true" : "false",
+    notify_ev_suspended: $("#notify_ev_suspended").is(":checked") ? "true" : "false",
+    notify_end_transaction: $("#notify_end_transaction").is(":checked") ? "true" : "false"
+  };
+  $.ajax({
+    url: "/api/mail-config",
+    method: "PUT",
+    contentType: "application/json",
+    data: JSON.stringify(payload)
+  }).done(function() {
+    $("#save-status").html('<span class="text-success">Saved successfully</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 3000);
+  }).fail(function() {
+    $("#save-status").html('<span class="text-danger">Error saving</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 3000);
+  });
+});
+
+$("#btn-test-mail").click(function() {
+  var btn = $(this);
+  btn.prop("disabled", true).text("Sending...");
+  $.ajax({
+    url: "/api/mail-config/test",
+    method: "POST",
+    contentType: "application/json",
+    data: "{}"
+  }).done(function(r) {
+    $("#save-status").html('<span class="text-success">' + (r.message || 'Test email sent') + '</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 3000);
+  }).fail(function(xhr) {
+    var msg = xhr.responseJSON ? xhr.responseJSON.message : "Failed to send test email";
+    $("#save-status").html('<span class="text-danger">' + msg + '</span>');
+    setTimeout(function() { $("#save-status").empty(); }, 5000);
+  }).always(function() {
+    btn.prop("disabled", false).text("Send Test Mail");
+  });
+});
+
+loadMailConfig();
+</script>
+{% endblock %}

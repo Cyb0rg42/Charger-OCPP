@@ -1,0 +1,24 @@
+{% extends "cs_base.html" %}
+{% block content %}
+<h2 class="section-title">Most Active Hour</h2>
+<div class="row mb-3">
+  <div class="col">
+    <div class="card border-info h-100">
+      <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+        <div class="stat-label text-info mb-1" style="font-size: 13px;">Most Active Hour</div>
+        <div class="stat-value text-info" id="stat-most-active-hour">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $.getJSON('/api/stats/most_active_hour', function(data) {
+    var txt = (data.hour !== undefined) ? (data.hour + ':00 (' + (data.sessions || 0) + ' sessions)') : '-';
+    $('#stat-most-active-hour').text(txt);
+  });
+});
+</script>
+{% endblock %}

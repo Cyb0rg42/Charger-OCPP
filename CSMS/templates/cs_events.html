@@ -1,0 +1,206 @@
+{% extends "cs_base.html" %}
+{% block content %}
+
+<h2 class="section-title">Transactions</h2>
+
+<!-- Filters Row -->
+<div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center;">
+  <!-- Left side: Filters -->
+  <div style="display: flex; gap: 12px; flex: 1;">
+    <input type="date" id="events-start" placeholder="Start date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+    <input type="date" id="events-end" placeholder="End date" style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;">
+    <input type="text" id="events-filter" placeholder="Search charge point/session..." style="padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; flex: 1; min-width: 250px;">
+    <button class="btn btn-primary" id="btn-refresh-events" style="white-space: nowrap;">Refresh</button>
+  </div>
+  
+  <!-- Right side: Export -->
+  <button class="btn btn-secondary" id="btn-export-events" style="white-space: nowrap; border: 1px solid var(--border-color);">Export CSV</button>
+</div>
+
+<!-- Transactions Table -->
+<div class="table-container">
+  <div style="max-height: 600px; overflow-y: auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Txn ID</th>
+          <th>Charger</th>
+          <th>Conn</th>
+          <th>IDTag</th>
+          <th>Start</th>
+          <th>Stop</th>
+          <th>Cable Connected</th>
+          <th>Session Duration</th>
+          <th>Energy (Wh)</th>
+          <th>Cost (€)</th>
+          <th>€/KM</th>
+          <th>KM</th>
+          <th>Car</th>
+        </tr>
+      </thead>
+      <tbody id="events-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function csvEscape(s) {
+  return '"' + String(s).replace(/"/g, '""') + '"';
+}
+
+function formatDuration(start, end) {
+  if (!start) return '-';
+  var a = new Date(start);
+  var b = end ? new Date(end) : new Date();
+  var d = Math.max(0, Math.floor((b - a) / 1000));
+  if (d <= 0) return '-';
+  var h = Math.floor(d / 3600);
+  var m = Math.floor((d % 3600) / 60);
+  var s = d % 60;
+  return (h ? h + 'h ' : '') + m + 'm ' + s + 's';
+}
+
+function renderEvents(events) {
+  const body = $('#events-body');
+  body.empty();
+  if (!events.length) {
+    body.append('<tr><td colspan="15" style="text-align: center; color: var(--text-secondary); padding: 20px;">No events found.</td></tr>');
+    return;
+  }
+  events.forEach(function(e) {
+    var energy = '-';
+    if (e.meter_stop != null && e.meter_start != null) {
+      var wh = e.meter_stop - e.meter_start;
+      energy = (wh >= 0) ? (wh / 1000).toFixed(3) : '-';
+    }
+    var kmVal = (e.km != null) ? e.km.toFixed(1) : '-';
+    var carCell = '';
+    if (e.stopped_at || e.meter_stop != null || e.charge_session_stop) {
+      carCell = '<select class="form-select form-select-sm car-select" data-txn-id="' + e.id + '" '
+        + 'style="background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); min-width: 120px; font-size: 12px;">'
+        + '<option value="">-- None --</option>';
+      _carList.forEach(function(c) {
+        var sel = (e.car_id === c.id) ? ' selected' : '';
+        carCell += '<option value="' + c.id + '"' + sel + '>' + escapeHtml(c.license_plate || (c.brand + ' ' + c.model)) + '</option>';
+      });
+      carCell += '</select>';
+    } else {
+      carCell = '-';
+    }
+    body.append('<tr>' +
+      '<td>' + escapeHtml(e.id) + '</td>' +
+      '<td>' + escapeHtml(e.cp_id) + '</td>' +
+      '<td>' + (e.connector_id || '-') + '</td>' +
+      '<td>' + escapeHtml(e.assigned_to || '-') + '</td>' +
+      '<td>' + fmtDate(e.charge_session_start || e.session_start_at) + '</td>' +
+      '<td>' + fmtDate(e.charge_session_stop || e.session_end_at) + '</td>' +
+      '<td>' + formatDuration(e.started_at, e.stopped_at) + '</td>' +
+      '<td>' + formatDuration(e.charge_session_start || e.session_start_at, e.charge_session_stop || e.session_end_at) + '</td>' +
+      '<td>' + energy + '</td>' +
+      '<td>' + (e.cost_eur != null ? '<a href="#" onclick="showCostDetail(' + e.id + '); return false;" style="color: var(--text-primary); text-decoration: underline dotted;">€ ' + e.cost_eur.toFixed(2) + '</a>' : '-') + '</td>' +
+      '<td>' + (e.cost_eur != null && kmVal !== '-' && parseFloat(kmVal) > 0 ? '€ ' + (e.cost_eur / parseFloat(kmVal)).toFixed(2) : '-') + '</td>' +
+      '<td>' + kmVal + '</td>' +
+      '<td>' + carCell + '</td>' +
+      '</tr>');
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function refreshEvents() {
+  var start = $('#events-start').val();
+  var end = $('#events-end').val();
+  var filter = $('#events-filter').val().trim().toLowerCase();
+  var query = '';
+  if (start) query += 'start=' + encodeURIComponent(start);
+  if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
+  $.getJSON('/api/charging-events?' + query, function(events) {
+    if (filter) {
+      events = events.filter(function(e) {
+        return ('' + e.cp_id).toLowerCase().includes(filter) ||
+               ('' + e.id).includes(filter) ||
+               ('' + e.id_tag).toLowerCase().includes(filter);
+      });
+    }
+    renderEvents(events);
+  });
+}
+
+function exportEvents() {
+  var start = $('#events-start').val();
+  var end = $('#events-end').val();
+  var query = '';
+  if (start) query += 'start=' + encodeURIComponent(start);
+  if (end) query += (query ? '&' : '') + 'end=' + encodeURIComponent(end);
+  $.getJSON('/api/charging-events?' + query, function(events) {
+    var csv = 'Txn ID,Charge Point,Connector,Assigned,Start,Stop,Cable Connected,Session Duration,Energy (Wh),Reason,Model,Vendor,Serial,Firmware Version,Meter Type\n';
+    events.forEach(function(e) {
+      var wh = (e.meter_stop != null && e.meter_start != null) ? (e.meter_stop - e.meter_start) : null;
+      var kwh = (wh !== null && wh >= 0) ? (wh / 1000).toFixed(3) : '';
+      csv += [
+        e.id,
+        e.cp_id,
+        e.connector_id,
+        e.assigned_to || '',
+        e.charge_session_start || e.session_start_at || '',
+        e.charge_session_stop || e.session_end_at || '',
+        formatDuration(e.started_at, e.stopped_at),
+        formatDuration(e.charge_session_start || e.session_start_at, e.charge_session_stop || e.session_end_at),
+        kwh,
+        e.stop_reason || '',
+        e.charger_model || '',
+        e.charger_vendor || '',
+        e.charger_serial || '',
+        e.charger_firmware || '',
+        e.charger_meter_type || ''
+      ].map(csvEscape).join(',') + '\n';
+    });
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'charging_events.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+$('#btn-refresh-events').click(refreshEvents);
+$('#btn-export-events').click(exportEvents);
+
+$(document).on('change', '.car-select', function() {
+  var txnId = $(this).data('txn-id');
+  var carId = $(this).val();
+  $.ajax({
+    url: '/api/transaction/' + txnId,
+    method: 'PUT',
+    contentType: 'application/json',
+    data: JSON.stringify({ car_id: carId ? parseInt(carId) : null }),
+    success: function() { refreshEvents(); },
+    error: function() { alert('Failed to update car.'); }
+  });
+});
+
+var _carList = [];
+
+$(function() {
+  $.getJSON('/api/cars', function(cars) {
+    _carList = cars;
+    var today = new Date().toISOString().split('T')[0];
+    $('#events-end').val(today);
+    var d = new Date();
+    d.setDate(d.getDate() - 7);
+    $('#events-start').val(d.toISOString().split('T')[0]);
+    refreshEvents();
+    setInterval(refreshEvents, 5000);
+  });
+});
+</script>
+{% endblock %}

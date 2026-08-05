@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block page_title %}Station Control{% endblock %}
+{% block content %}
+
+<!-- Control Cards -->
+<div class="control-grid">
+  <div class="control-card">
+    <div class="control-card-header">
+      <span class="control-card-title">🔌 Cable</span>
+      <div class="connector-select-wrap">
+        <span>Connector</span>
+        <select id="connector-select"></select>
+      </div>
+    </div>
+    <div class="control-card-status" id="cable-status" style="color:var(--text-secondary);">—</div>
+    <div class="status-text" id="connector-lock-status" style="text-align:center; margin-top:-8px; margin-bottom:8px;">—</div>
+    <div class="control-card-actions">
+      <button class="btn btn-success" id="btn-cable-connect">Connect</button>
+      <button class="btn btn-danger" id="btn-cable-disconnect">Disconnect</button>
+    </div>
+  </div>
+
+  <div class="control-card">
+    <div class="control-card-header">
+      <span class="control-card-title">🚗 Car</span>
+    </div>
+    <div class="control-card-status" id="car-status" style="color:var(--text-secondary);">—</div>
+    <div class="control-card-actions">
+      <button class="btn btn-success" id="btn-car-connect">Connect</button>
+      <button class="btn btn-danger" id="btn-car-disconnect">Disconnect</button>
+    </div>
+  </div>
+
+  <div class="control-card">
+    <div class="control-card-header">
+      <span class="control-card-title">⚡ Charging</span>
+    </div>
+    <div class="control-card-status" id="charging-status" style="color:var(--text-secondary);">—</div>
+    <div class="control-card-actions">
+      <button class="btn btn-cyan" id="btn-charge-start">Start Session</button>
+      <button class="btn btn-primary" id="btn-charge-stop">Stop Session</button>
+    </div>
+  </div>
+</div>
+
+<!-- Energy Indicators -->
+<div class="energy-row">
+  <div class="energy-pill">
+    <span class="energy-label">Total Energy</span>
+    <span class="energy-value"><span id="total-energy">0.000</span> kWh</span>
+  </div>
+  <div class="energy-pill">
+    <span class="energy-label">Session Energy</span>
+    <span class="energy-value"><span id="session-energy">0.000</span> kWh</span>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="chart-grid">
+  <div class="chart-card">
+    <div class="chart-title">Energy per Session (kWh)</div>
+    <canvas id="energyBarChart" height="220"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">Energy Over Time (kWh)</div>
+    <canvas id="powerTimeline" height="220"></canvas>
+  </div>
+</div>
+
+<div id="alerts"></div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const socket = io();
+
+// ── Charts ──
+const chartColors = {
+  grid: 'rgba(64,69,85,0.6)',
+  text: '#b0b5c0',
+  bar: 'rgba(6, 182, 212, 0.7)',
+  barActive: 'rgba(74, 222, 128, 0.8)',
+  line: '#4ade80',
+  lineFill: 'rgba(74, 222, 128, 0.1)',
+};
+
+const energyCtx = document.getElementById('energyBarChart').getContext('2d');
+const energyChart = new Chart(energyCtx, {
+  type: 'bar',
+  data: { labels: [], datasets: [{
+    label: 'Energy (kWh)',
+    data: [],
+    backgroundColor: chartColors.bar,
+    borderColor: 'rgba(6, 182, 212, 1)',
+    borderWidth: 1
+  }]},
+  options: {
+    responsive: true,
+    scales: {
+      y: { beginAtZero: true, grid: { color: chartColors.grid }, title: { display: true, text: 'kWh', color: chartColors.text }, ticks: { color: chartColors.text } },
+      x: { grid: { color: chartColors.grid }, title: { display: true, text: 'Session', color: chartColors.text }, ticks: { color: chartColors.text } }
+    },
+    plugins: { legend: { labels: { color: chartColors.text } } }
+  }
+});
+
+const timeCtx = document.getElementById('powerTimeline').getContext('2d');
+const timeChart = new Chart(timeCtx, {
+  type: 'line',
+  data: { labels: [], datasets: [{
+    label: 'Energy (kWh)',
+    data: [],
+    borderColor: chartColors.line,
+    backgroundColor: chartColors.lineFill,
+    fill: true,
+    tension: 0.3,
+    pointRadius: 2
+  }]},
+  options: {
+    responsive: true,
+    scales: {
+      y: { beginAtZero: true, grid: { color: chartColors.grid }, title: { display: true, text: 'kWh', color: chartColors.text }, ticks: { color: chartColors.text } },
+      x: { grid: { color: chartColors.grid }, title: { display: true, text: 'Time', color: chartColors.text }, ticks: { color: chartColors.text, maxTicksLimit: 10 } }
+    },
+    plugins: { legend: { labels: { color: chartColors.text } } },
+    animation: false
+  }
+});
+
+function updateCharts(data) {
+  energyChart.data.labels = data.sessions.map(s => '#' + s.id);
+  energyChart.data.datasets[0].data = data.sessions.map(s => s.energy_kwh);
+  energyChart.data.datasets[0].backgroundColor = data.sessions.map(s =>
+    s.ended_at ? chartColors.bar : chartColors.barActive
+  );
+  energyChart.update('none');
+
+  const history = data.power_history || [];
+  timeChart.data.labels = history.map(p => new Date(p[0]).toLocaleTimeString());
+  timeChart.data.datasets[0].data = history.map(p => p[1]);
+  timeChart.update('none');
+}
+
+// ── State ──
+function updateFromState(data) {
+  const cableEl = document.getElementById('cable-status');
+  cableEl.textContent = data.cable_connected ? 'Connected' : 'Disconnected';
+  cableEl.style.color = data.cable_connected ? 'var(--accent-green)' : 'var(--text-secondary)';
+
+  const lockEl = document.getElementById('connector-lock-status');
+  if (data.cable_connected) {
+    lockEl.textContent = data.connector_locked ? '🔒 Locked' : '🔓 Unlocked';
+    lockEl.style.color = data.connector_locked ? 'var(--accent-green)' : 'var(--text-secondary)';
+  } else {
+    lockEl.textContent = '—';
+    lockEl.style.color = 'var(--text-secondary)';
+  }
+
+  const carEl = document.getElementById('car-status');
+  carEl.textContent = data.car_connected ? 'Connected' : 'Disconnected';
+  carEl.style.color = data.car_connected ? 'var(--accent-green)' : 'var(--text-secondary)';
+
+  const chgEl = document.getElementById('charging-status');
+  chgEl.textContent = data.charging ? 'Charging' : 'Idle';
+  chgEl.style.color = data.charging ? 'var(--accent-cyan)' : 'var(--text-secondary)';
+
+  document.getElementById('total-energy').textContent = data.total_energy_kwh.toFixed(3);
+  const active = data.sessions.find(s => !s.ended_at);
+  document.getElementById('session-energy').textContent = active ? active.energy_kwh.toFixed(3) : '0.000';
+  updateCharts(data);
+}
+
+function refresh() { $.getJSON("/api/state", updateFromState); }
+
+function showError(msg) {
+  const el = $('<div class="alert-toast error"></div>').text(msg);
+  $("#alerts").append(el);
+  setTimeout(() => el.fadeOut(300, () => el.remove()), 4000);
+}
+
+function post(url, action) {
+  $.ajax({ url, method: "POST", contentType: "application/json", data: JSON.stringify({action}) })
+    .fail(xhr => showError("Request failed: " + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText)));
+}
+
+$("#btn-cable-connect").click(function() {
+  const connectorId = parseInt($("#connector-select").val(), 10) || 1;
+  $.ajax({ url: "/api/cable", method: "POST", contentType: "application/json",
+    data: JSON.stringify({action: "connect", connector_id: connectorId}) })
+    .fail(xhr => showError("Request failed: " + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText)));
+});
+$("#btn-cable-disconnect").click(() => post("/api/cable", "disconnect"));
+$("#btn-car-connect").click(() => post("/api/car", "connect"));
+$("#btn-car-disconnect").click(() => post("/api/car", "disconnect"));
+$("#btn-charge-start").click(function() {
+  $.ajax({ url: "/api/charging", method: "POST", contentType: "application/json",
+    data: JSON.stringify({action: "start"}) })
+    .fail(xhr => showError("Request failed: " + (xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText)));
+});
+$("#btn-charge-stop").click(() => post("/api/charging", "stop"));
+
+function loadConnectors() {
+  $.getJSON("/api/config", function(cfg) {
+    const sel = $("#connector-select");
+    const cur = sel.val();
+    sel.empty();
+    for (let i = 1; i <= (cfg.num_connectors || 1); i++) {
+      sel.append($('<option>').val(i).text(i));
+    }
+    if (cur) sel.val(cur);
+  });
+}
+loadConnectors();
+
+socket.on("state_update", updateFromState);
+setInterval(refresh, 2000);
+$(document).ready(refresh);
+</script>
+{% endblock %}
+

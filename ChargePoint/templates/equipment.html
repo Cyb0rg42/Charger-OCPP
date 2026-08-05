@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block page_title %}Equipment Database{% endblock %}
+{% block content %}
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header-custom">
+    <span class="card-title-custom">Vendors &amp; Models</span>
+  </div>
+  <div style="padding:16px 20px; display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+
+    <!-- Vendors column -->
+    <div>
+      <div class="filter-bar" style="margin-bottom:12px;">
+        <input type="text" id="eq-new-vendor" placeholder="New vendor name">
+        <button class="btn btn-primary" onclick="eqAddVendor()">Add</button>
+      </div>
+      <div id="eq-vendor-list"></div>
+    </div>
+
+    <!-- Models column -->
+    <div>
+      <div id="eq-model-add-row" class="filter-bar" style="margin-bottom:12px; display:none;">
+        <input type="text" id="eq-new-model" placeholder="New model name">
+        <button class="btn btn-primary" onclick="eqAddModel()">Add</button>
+      </div>
+      <div class="empty-state" id="eq-model-hint">Select a vendor to view its models.</div>
+      <div id="eq-model-list"></div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let _allVendors = [];
+let _allModels = [];
+let _selectedVendorId = null;
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function loadEquipment() {
+  $.getJSON("/api/vendors", function(vendors) {
+    _allVendors = vendors || [];
+    renderEqVendors();
+    if (_selectedVendorId != null) {
+      const still = _allVendors.some(v => v.id === _selectedVendorId);
+      if (!still) { _selectedVendorId = null; }
+    }
+    renderEqModels();
+  });
+}
+
+function renderEqVendors() {
+  const box = document.getElementById("eq-vendor-list");
+  if (!_allVendors.length) {
+    box.innerHTML = '<div class="empty-state">No vendors yet.</div>';
+    return;
+  }
+  let html = '<table class="data-table"><tbody>';
+  _allVendors.forEach(function(v) {
+    const active = (v.id === _selectedVendorId) ? ' style="background-color:rgba(255,255,255,0.05);"' : '';
+    html += '<tr' + active + '>'
+      + '<td style="cursor:pointer;" onclick="eqSelectVendor(' + v.id + ')">' + esc(v.name) + '</td>'
+      + '<td style="width:80px; text-align:right;">'
+      + '<button class="btn btn-danger btn-sm" onclick="eqDeleteVendor(' + v.id + ')">Delete</button>'
+      + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+function eqSelectVendor(id) {
+  _selectedVendorId = id;
+  document.getElementById("eq-model-add-row").style.display = "flex";
+  renderEqVendors();
+  $.getJSON("/api/models?vendor_id=" + id, function(models) {
+    _allModels = models || [];
+    renderEqModels();
+  });
+}
+
+function renderEqModels() {
+  const hint = document.getElementById("eq-model-hint");
+  const box = document.getElementById("eq-model-list");
+  if (_selectedVendorId == null) {
+    hint.style.display = "block";
+    box.innerHTML = "";
+    return;
+  }
+  hint.style.display = "none";
+  if (!_allModels.length) {
+    box.innerHTML = '<div class="empty-state">No models for this vendor.</div>';
+    return;
+  }
+  let html = '<table class="data-table"><tbody>';
+  _allModels.forEach(function(m) {
+    html += '<tr>'
+      + '<td>' + esc(m.name) + '</td>'
+      + '<td style="width:80px; text-align:right;">'
+      + '<button class="btn btn-danger btn-sm" onclick="eqDeleteModel(' + m.id + ')">Delete</button>'
+      + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+function eqAddVendor() {
+  const inp = document.getElementById("eq-new-vendor");
+  const name = inp.value.trim();
+  if (!name) return;
+  $.ajax({
+    url: "/api/vendors", method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({ name: name })
+  }).done(function() { inp.value = ""; loadEquipment(); });
+}
+
+function eqDeleteVendor(id) {
+  if (!confirm("Delete this vendor and all its models?")) return;
+  $.ajax({ url: "/api/vendors/" + id, method: "DELETE" }).done(function() {
+    if (_selectedVendorId === id) {
+      _selectedVendorId = null;
+      _allModels = [];
+      document.getElementById("eq-model-add-row").style.display = "none";
+    }
+    loadEquipment();
+  });
+}
+
+function eqAddModel() {
+  if (_selectedVendorId == null) return;
+  const inp = document.getElementById("eq-new-model");
+  const name = inp.value.trim();
+  if (!name) return;
+  $.ajax({
+    url: "/api/models", method: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({ vendor_id: _selectedVendorId, name: name })
+  }).done(function() {
+    inp.value = "";
+    eqSelectVendor(_selectedVendorId);
+  });
+}
+
+function eqDeleteModel(id) {
+  if (!confirm("Delete this model?")) return;
+  $.ajax({ url: "/api/models/" + id, method: "DELETE" }).done(function() {
+    eqSelectVendor(_selectedVendorId);
+  });
+}
+
+$(document).ready(loadEquipment);
+</script>
+{% endblock %}
