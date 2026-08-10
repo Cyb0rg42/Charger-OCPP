@@ -271,12 +271,14 @@ function showCostDetail(txnId) {
     data.hours.forEach(function(h, idx) {
       // Skip hours with no energy consumed
       if (!h.energy_wh || h.energy_wh <= 0) return;
-      // Parse hour key "YYYY-MM-DD HH" (UTC) to build segment boundaries
+      // Parse quarter-hour key "YYYY-MM-DD HH:MM" (UTC) to build segment boundaries
       var parts = h.hour.split(' ');
       var dateParts = parts[0].split('-');
-      var hourNum = parseInt(parts[1], 10);
-      var segStart = new Date(Date.UTC(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]), hourNum, 0, 0));
-      var segEnd = new Date(segStart.getTime() + 3600000); // +1 hour
+      var timeParts = parts[1].split(':');
+      var hourNum = parseInt(timeParts[0], 10);
+      var minuteNum = parseInt(timeParts[1], 10) || 0;
+      var segStart = new Date(Date.UTC(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]), hourNum, minuteNum, 0));
+      var segEnd = new Date(segStart.getTime() + 900000); // +15 minutes
 
       // Clamp to transaction boundaries
       if (segStart < txStart) segStart = txStart;
