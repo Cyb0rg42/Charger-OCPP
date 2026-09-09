@@ -495,6 +495,6 @@ if __name__ == "__main__":
     # Allow running web_app.py directly for quick testing
     # (for production use app.py which also starts the WS proxy)
     proxy_db.init_db()
-    print("Starting OCPP Proxy web dashboard on http://0.0.0.0:4000")
+    print("Starting OCPP Proxy web dashboard on http://0.0.0.0:9300")
     print("NOTE: WebSocket proxy not started — run app.py for full proxy")
-    socketio.run(app, host="0.0.0.0", port=4000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=9300, debug=True, allow_unsafe_werkzeug=True)

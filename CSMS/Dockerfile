@@ -12,9 +12,9 @@ RUN mkdir -p /opt/charger/data /var/log/charger \
     && chown -R charger:charger /opt/charger/data /var/log/charger
 USER charger
 
-# web_port / ocpp_port come from the mounted config file (see docker-compose.yml).
-# Defaults below only apply if no config is provided.
-EXPOSE 9000 9001
+# No EXPOSE: web_port / ocpp_port come from the mounted config file and differ
+# per instance, so any fixed value here would be wrong for at least one of
+# them. docker-compose.yml publishes the real ports.
 
 ENTRYPOINT ["python", "csms.py"]
 CMD ["--config", "/config/config.yaml"]

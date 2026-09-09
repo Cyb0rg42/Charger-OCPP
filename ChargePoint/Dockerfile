@@ -12,8 +12,9 @@ RUN mkdir -p /opt/charger/data /var/log/charger \
     && chown -R charger:charger /opt/charger/data /var/log/charger
 USER charger
 
-# GUI port comes from the mounted config file (see docker-compose.yml).
-EXPOSE 5000
+# No EXPOSE: the GUI port comes from the mounted config file's "port" field
+# and differs per instance, so any fixed value here would be wrong for at
+# least one of them. docker-compose.yml publishes the real ports.
 
 ENTRYPOINT ["python", "chargepoint.py"]
 CMD ["--config", "/config/config.json"]

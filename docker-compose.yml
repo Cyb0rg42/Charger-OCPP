@@ -3,13 +3,14 @@ services:
     build: ./OCPPProxy
     container_name: charger-ocppproxy
     ports:
-      - "4000:4000"   # web dashboard (from config "port")
-      - "9100:9100"   # OCPP listen port — charge points connect here
+      - "9300:9300"   # web dashboard (config "port")
+      - "9310:9310"   # OCPP listen port — charge points connect here
     environment:
       # Seeds the "Default Backend" row on first boot (empty data volume only —
       # doesn't affect it once seeded). Points at csms1's service name rather
       # than 127.0.0.1, which inside this container would mean itself.
-      PROXY_DEFAULT_BACKEND_URL: "ws://csms1:9000/ocpp"
+      # PROXY_LISTEN_PORT is left at the image default (9310).
+      PROXY_DEFAULT_BACKEND_URL: "ws://csms1:9110/ocpp"
     volumes:
       - ./OCPPProxy/config_example.yaml:/config/config.yaml:ro
       - ocppproxy_data:/opt/charger/data
@@ -24,8 +25,8 @@ services:
     build: ./CSMS
     container_name: charger-csms1
     ports:
-      - "9000:9000"   # ocpp_port
-      - "9001:9001"   # web_port
+      - "9100:9100"   # web_port
+      - "9110:9110"   # ocpp_port
     volumes:
       - ./CSMS/config_instance1.yaml:/config/config.yaml:ro
       - csms1_data:/opt/charger/data
@@ -36,8 +37,8 @@ services:
     build: ./CSMS
     container_name: charger-csms2
     ports:
-      - "9010:9010"   # ocpp_port
-      - "9011:9011"   # web_port
+      - "9200:9200"   # web_port
+      - "9210:9210"   # ocpp_port
     volumes:
       - ./CSMS/config_instance2.yaml:/config/config.yaml:ro
       - csms2_data:/opt/charger/data
@@ -51,7 +52,7 @@ services:
     build: ./ChargePoint
     container_name: charger-chargepoint1
     ports:
-      - "5001:5001"
+      - "9400:9400"   # GUI port from config_instance1.json
     volumes:
       - ./ChargePoint/config_instance1.json:/config/config.json:ro
       - chargepoint1_data:/opt/charger/data
@@ -62,7 +63,7 @@ services:
     build: ./ChargePoint
     container_name: charger-chargepoint2
     ports:
-      - "5002:5002"
+      - "9500:9500"   # GUI port from config_instance2.json
     volumes:
       - ./ChargePoint/config_instance2.json:/config/config.json:ro
       - chargepoint2_data:/opt/charger/data

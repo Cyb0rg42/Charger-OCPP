@@ -1,4 +1,4 @@
 server_name: "Backend-1"
 database_path: "/opt/charger/data/central_system_1.db"
-web_port: 9001
-ocpp_port: 9000
+web_port: 9100
+ocpp_port: 9110

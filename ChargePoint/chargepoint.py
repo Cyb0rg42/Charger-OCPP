@@ -110,7 +110,7 @@ socketio = SocketIO(app)
 
 # Expose station name to all templates
 _station_name = _file_cfg.get("name", "Cyb0rg42 Station") if _file_cfg else "Cyb0rg42 Station"
-_gui_port = _file_cfg.get("port", 5000) if _file_cfg else 5000
+_gui_port = _file_cfg.get("port", 9400) if _file_cfg else 9400
 
 @app.context_processor
 def inject_station_name():
@@ -119,6 +119,15 @@ def inject_station_name():
 # --- Initialise database and load persisted state ---
 
 init_models()
+
+# Seed the central system URL from the config file when the database has none
+# yet. Anything set later in the GUI is stored in the database and wins, so
+# this only applies to a fresh instance — where the default `localhost` URL
+# would otherwise point a containerised chargepoint at itself.
+if _file_cfg:
+    _ocpp_url = _file_cfg.get("ocpp_url")
+    if _ocpp_url and "ocpp_url" not in db.load_config():
+        update_config(ocpp_url=_ocpp_url)
 
 # --- Background OCPP loop in another thread ---
 

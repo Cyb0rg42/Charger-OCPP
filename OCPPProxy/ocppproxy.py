@@ -4,9 +4,9 @@ Script:   ocppproxy.py
 
 Abstract:
     Entry point for the OCPP Proxy server. Starts the Flask + Socket.IO web
-    dashboard (web port, default 4000) and the OCPP WebSocket proxy that
-    charge points connect to (proxy_core.py, listen port via
-    PROXY_LISTEN_PORT, default 9100), which transparently forwards,
+    dashboard (web port, default 9300) and the OCPP WebSocket proxy that
+    charge points connect to (proxy_core.py, listen port stored in the
+    database, seeded from PROXY_LISTEN_PORT, default 9310), which forwards,
     inspects, logs, and can selectively block OCPP traffic to one or more
     CSMS backends.
 
@@ -56,7 +56,7 @@ from web_app import app, socketio
 
 logger = logging.getLogger("proxy")
 
-DEFAULT_WEB_PORT = 4000
+DEFAULT_WEB_PORT = 9300
 _proxy_started = False
 
 
@@ -179,7 +179,7 @@ def start_background_proxy():
     _proxy_started = True
     t = threading.Thread(target=_run_ws_proxy, daemon=True)
     t.start()
-    logger.info("WebSocket proxy thread started (port %s)", proxy_core.LISTEN_PORT)
+    logger.info("WebSocket proxy thread started")
 
 
 # ── Import-time setup (e.g. gunicorn `ocppproxy:app`) ───────────

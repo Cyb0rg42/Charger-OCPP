@@ -10,8 +10,8 @@ __TOC__
 
 The CSMS performs the following core functions:
 
-* '''Charge point communication''' — speaks OCPP 1.6 to charge points over WebSocket (default port '''9000''').
-* '''Web interface & REST API''' — operator dashboard and JSON API (default port '''9001''').
+* '''Charge point communication''' — speaks OCPP 1.6 to charge points over WebSocket (default port '''9110''').
+* '''Web interface & REST API''' — operator dashboard and JSON API (default port '''9100''').
 * '''Session tracking''' — records charging transactions with detailed meter values (energy, power, current per phase, temperature).
 * '''RFID authorization''' — manages the whitelist of RFID cards/tags allowed to charge.
 * '''Smart charging''' — integrates with [https://www.zonneplan.nl/ Zonneplan] to fetch hourly electricity tariffs and find the cheapest charging window.
@@ -22,9 +22,9 @@ The CSMS performs the following core functions:
 === Architecture ===
 
 <pre>
-Charge Point  ──(OCPP / WebSocket :9000)──►  central_system.py  ──►  cs_db.py  ──►  SQLite DB
+Charge Point  ──(OCPP / WebSocket :9110)──►  central_system.py  ──►  cs_db.py  ──►  SQLite DB
                                                                                     ▲
-Web Browser   ──(HTTP :9001)───────────────►  csms.py (Flask)  ──────────────────────┘
+Web Browser   ──(HTTP :9100)───────────────►  csms.py (Flask)  ──────────────────────┘
 
 External services:
   Zonneplan API  ──►  hourly electricity tariffs
@@ -97,14 +97,14 @@ If no <code>--config</code> is given, built‑in defaults are used:
 |-
 | <code>database_path</code> || <code>/opt/charger/data/csms.db</code>
 |-
-| <code>web_port</code> || <code>9001</code>
+| <code>web_port</code> || <code>9100</code>
 |-
-| <code>ocpp_port</code> || <code>9000</code>
+| <code>ocpp_port</code> || <code>9110</code>
 |}
 
 On first start the database schema is created automatically. Once running, open the web interface at:
 
-: <code>http://&lt;host&gt;:9001</code>
+: <code>http://&lt;host&gt;:9100</code>
 
 === Running as a systemd service ===
 
@@ -166,8 +166,8 @@ The main configuration is a YAML file. Example (<code>config_instance1.yaml</cod
 <pre>
 server_name: "Backend-1"
 database_path: "/opt/charger/data/central_system_1.db"
-web_port: 9001
-ocpp_port: 9000
+web_port: 9100
+ocpp_port: 9110
 </pre>
 
 {| class="wikitable"
@@ -177,9 +177,9 @@ ocpp_port: 9000
 |-
 | <code>database_path</code> || <code>/opt/charger/data/csms.db</code> || Path to the SQLite database file
 |-
-| <code>web_port</code> || <code>9001</code> || Port for the Flask web interface (HTTP)
+| <code>web_port</code> || <code>9100</code> || Port for the Flask web interface (HTTP)
 |-
-| <code>ocpp_port</code> || <code>9000</code> || Port for the OCPP WebSocket server
+| <code>ocpp_port</code> || <code>9110</code> || Port for the OCPP WebSocket server
 |}
 
 {{Note|If the OCPP port has been changed from the web interface, the value stored in the database takes precedence over the YAML/default value at startup.}}
@@ -240,7 +240,7 @@ Once connected, the CSMS periodically fetches hourly tariffs (stored in the data
 
 == Using the Web Interface ==
 
-The web interface is available at <code>http://&lt;host&gt;:9001</code>. The main pages are:
+The web interface is available at <code>http://&lt;host&gt;:9100</code>. The main pages are:
 
 {| class="wikitable"
 ! Page !! Description
@@ -404,9 +404,9 @@ The CSMS implements the following OCPP 1.6 actions.
 {| class="wikitable"
 ! Symptom !! Things to check
 |-
-| Chargers not connecting || Confirm the charger points to <code>ws://&lt;host&gt;:9000</code> and that the OCPP port matches <code>ocpp_port</code>; check firewall rules.
+| Chargers not connecting || Confirm the charger points to <code>ws://&lt;host&gt;:9110</code> and that the OCPP port matches <code>ocpp_port</code>; check firewall rules.
 |-
-| Web UI not reachable || Verify the service is running and that <code>web_port</code> (9001) is open.
+| Web UI not reachable || Verify the service is running and that <code>web_port</code> (9100) is open.
 |-
 | No cost data on sessions || Ensure Zonneplan is authenticated and tariffs are being fetched; otherwise the default tariff (€0.30/kWh) is used.
 |-
@@ -421,7 +421,7 @@ The CSMS implements the following OCPP 1.6 actions.
 # Create <code>/opt/charger/CSMS/</code>, <code>/opt/charger/data/</code>, and <code>/var/log/charger/</code>.
 # Add a configuration file (e.g. <code>config_instance1.yaml</code>).
 # Install and enable the systemd service.
-# Open the web UI at <code>http://&lt;host&gt;:9001</code>.
-# Confirm the OCPP port (9000) matches your chargers' configuration.
+# Open the web UI at <code>http://&lt;host&gt;:9100</code>.
+# Confirm the OCPP port (9110) matches your chargers' configuration.
 # (Optional) Configure email notifications on the Mail Config page.
 # (Optional) Authenticate Zonneplan on the Zonneplan Config page.

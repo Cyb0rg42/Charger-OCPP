@@ -225,7 +225,7 @@ def init_db():
     conn.commit()
 
     # Seed default OCPP config values if not present
-    defaults = {"heartbeat_interval": "30", "expiration": "1", "ocpp_port": "9000"}
+    defaults = {"heartbeat_interval": "30", "expiration": "1", "ocpp_port": "9110"}
     for k, v in defaults.items():
         conn.execute(
             "INSERT OR IGNORE INTO ocpp_config (key, value) VALUES (?, ?)",

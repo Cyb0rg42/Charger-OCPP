@@ -21,9 +21,9 @@ intended for production charging.
 
 | Component | Directory | Role | Default ports |
 |---|---|---|---|
-| **CSMS** | [`CSMS/`](CSMS/) | OCPP 1.6 Central System — production-capable. Accepts charge point connections (tested with SmartEVSE and with the bundled simulator), tracks transactions, remote commands, RFID authorization, Zonneplan tariff-based smart charging | `9000` (OCPP), `9001` (web) |
-| **ChargePoint** | [`ChargePoint/`](ChargePoint/) | Virtual charge point / station simulator (test/dev only) — connects out to a CSMS (directly or via the proxy), simulates cable/car connect and charging sessions | `5000` (web) |
-| **OCPPProxy** | [`OCPPProxy/`](OCPPProxy/) | Transparent OCPP man-in-the-middle proxy (test/dev only) — a single instance serves *many* charge points at once, each independently fanned out to *one or more* configured CSMS backends; message logging, command blocking, boot/connector overrides | `4000` (web), `9100` (OCPP) |
+| **CSMS** | [`CSMS/`](CSMS/) | OCPP 1.6 Central System — production-capable. Accepts charge point connections (tested with SmartEVSE and with the bundled simulator), tracks transactions, remote commands, RFID authorization, Zonneplan tariff-based smart charging | `9100` (web), `9110` (OCPP) |
+| **ChargePoint** | [`ChargePoint/`](ChargePoint/) | Virtual charge point / station simulator (test/dev only) — connects out to a CSMS (directly or via the proxy), simulates cable/car connect and charging sessions | `9400` (web) |
+| **OCPPProxy** | [`OCPPProxy/`](OCPPProxy/) | Transparent OCPP man-in-the-middle proxy (test/dev only) — a single instance serves *many* charge points at once, each independently fanned out to *one or more* configured CSMS backends; message logging, command blocking, boot/connector overrides | `9300` (web), `9310` (OCPP) |
 
 Each component has its own detailed manual: see `usermanual.mediawiki` in
 each directory for configuration options, the REST API reference, and
@@ -83,30 +83,40 @@ production deployment you'd typically run just a `csms` service (and skip
 hardware — e.g. a [SmartEVSE](https://www.smartevse.nl/) module — at the
 CSMS's OCPP port instead of the simulator.
 
-| Service | URL | Notes |
+| Service | URL (host) | Notes |
 |---|---|---|
-| OCPP Proxy dashboard | http://localhost:4000 | |
-| CSMS 1 dashboard | http://localhost:9001 | OCPP listener on `:9000` |
-| CSMS 2 dashboard | http://localhost:9011 | OCPP listener on `:9010` |
-| ChargePoint 1 dashboard | http://localhost:5001 | |
-| ChargePoint 2 dashboard | http://localhost:5002 | |
+| OCPP Proxy dashboard | http://localhost:9300 | OCPP listener on `:9310` |
+| CSMS 1 dashboard | http://localhost:9100 | OCPP listener on `:9110` |
+| CSMS 2 dashboard | http://localhost:9200 | OCPP listener on `:9210` |
+| ChargePoint 1 dashboard | http://localhost:9400 | |
+| ChargePoint 2 dashboard | http://localhost:9500 | |
+
+Every port is the same number inside the container as on the host, so
+[`docker-compose.yml`](docker-compose.yml) maps them 1:1 and there is no
+translation to keep track of. The scheme is `93xx` for the proxy, `91xx`/`92xx`
+for the CSMS instances and `94xx`/`95xx` for the chargepoints, with `x00` the
+web interface and `x10` the OCPP port.
+
+Containers still reach each other by *service name*, not `localhost` — but on
+the same port number you use from the host, e.g. `ws://csms1:9110/ocpp`.
 
 ### First-time wiring
 
-Fresh containers don't know about each other yet — a couple of one-time
-steps in the web UIs connect the pieces (Docker containers reach each
-other by service name on the compose network, not `localhost`):
+A fresh stack wires itself up, because Docker containers reach each other
+by service name on the compose network rather than `localhost`:
 
-1. **OCPPProxy → CSMS**: open the proxy dashboard (`:4000`) →
-   backend settings, and confirm/add a backend URL of
-   `ws://csms1:9000/ocpp` (the compose file seeds this automatically on a
-   fresh `ocppproxy` data volume via `PROXY_DEFAULT_BACKEND_URL`).
-2. **ChargePoint → OCPPProxy (or CSMS)**: open a ChargePoint dashboard
-   (`:5001`/`:5002`), go to its OCPP/config settings, and set the central
-   system URL to `ws://ocppproxy:9100/ocpp` (through the proxy) or
-   directly to `ws://csms1:9000/ocpp` (bypassing it). Use the *service
-   name*, never `127.0.0.1`/`localhost` — inside a container that means
-   the container itself.
+1. **OCPPProxy → CSMS**: seeded as `ws://csms1:9110/ocpp` from
+   `PROXY_DEFAULT_BACKEND_URL` in the compose file. Check or change it in
+   the proxy dashboard (`:9300`) → backend settings.
+2. **ChargePoint → OCPPProxy**: seeded as `ws://ocppproxy:9310/ocpp` from
+   the `ocpp_url` key in each `config_instanceN.json`. To bypass the proxy,
+   point it straight at `ws://csms1:9110/ocpp` instead, either in the config
+   file or from the ChargePoint dashboard (`:9400`/`:9500`).
+
+Both seeds only apply while the value is still unset, so anything you
+change in a web UI is persisted and wins from then on. Whichever way you
+set them, use the *service name* — never `127.0.0.1`/`localhost`, which
+inside a container means the container itself.
 
 ### Running more instances
 
@@ -119,7 +129,7 @@ and port mapping:
   [`CSMS/config_instance1.yaml`](CSMS/config_instance1.yaml) /
   [`config_instance2.yaml`](CSMS/config_instance2.yaml).
 - ChargePoint instances are configured with a small JSON file
-  (`name`, `database`, `port`, `logs`) — see
+  (`name`, `database`, `port`, `ocpp_url`, `logs`) — see
   [`ChargePoint/config_instance1.json`](ChargePoint/config_instance1.json) /
   [`config_instance2.json`](ChargePoint/config_instance2.json).
 
@@ -140,8 +150,8 @@ state.
 | App | Format | Key fields |
 |---|---|---|
 | CSMS | YAML | `server_name`, `database_path`, `web_port`, `ocpp_port` |
-| ChargePoint | JSON | `name`, `database`, `port`, `logs.{ocpp_log,access_log,error_log}` |
-| OCPPProxy | YAML/JSON | `name`, `port` (web dashboard); `PROXY_LISTEN_PORT` env var sets the OCPP-facing port (default `9100`) |
+| ChargePoint | JSON | `name`, `database`, `port`, `ocpp_url` (seeds the central system URL on a fresh database), `logs.{ocpp_log,access_log,error_log}` |
+| OCPPProxy | YAML/JSON | `name`, `port` (web dashboard); the OCPP-facing port lives in the database — `PROXY_LISTEN_PORT` (default `9310`) seeds it on first boot, the dashboard changes it afterwards |
 
 The container entrypoint for each app takes the config file via
 `--config`, mounted read-only at `/config/config.yaml` (or `.json`) — see

@@ -239,10 +239,12 @@ def _seed_config(c):
     """Insert default proxy config if missing."""
     row = c.execute("SELECT COUNT(*) FROM proxy_config WHERE key = 'listen_port'").fetchone()
     if row[0] == 0:
-        c.execute("INSERT OR IGNORE INTO proxy_config (key, value) VALUES ('listen_port', '9100')")
+        default_port = os.environ.get("PROXY_LISTEN_PORT", "9310")
+        c.execute("INSERT OR IGNORE INTO proxy_config (key, value) VALUES ('listen_port', ?)",
+                  (default_port,))
     row = c.execute("SELECT COUNT(*) FROM backend_servers").fetchone()
     if row[0] == 0:
-        default_url = os.environ.get("PROXY_DEFAULT_BACKEND_URL", "ws://127.0.0.1:9000/ocpp")
+        default_url = os.environ.get("PROXY_DEFAULT_BACKEND_URL", "ws://127.0.0.1:9110/ocpp")
         c.execute("INSERT INTO backend_servers (name, url, enabled) VALUES (?, ?, 1)",
                   ("Default Backend", default_url))
     c.commit()
@@ -671,7 +673,7 @@ def set_config(key, value):
 
 
 def get_listen_port():
-    return int(get_config("listen_port", "9100"))
+    return int(get_config("listen_port", "9310"))
 
 
 def set_listen_port(port):

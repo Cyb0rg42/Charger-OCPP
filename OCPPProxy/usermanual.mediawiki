@@ -23,16 +23,16 @@ The OCPPProxy provides:
 
 <pre>
 Charge Points
-     │  (OCPP / WebSocket)  ws://<proxy>:9100/ocpp/<cp_id>
+     │  (OCPP / WebSocket)  ws://<proxy>:9310/ocpp/<cp_id>
      ▼
 ┌────────────────────────────────────┐
 │            OCPPProxy               │
-│  Port 9100 — charge point listener │
-│  Port 4000 — web dashboard         │
+│  Port 9310 — charge point listener │
+│  Port 9300 — web dashboard         │
 └────────────────────────────────────┘
      │  fan-out to up to 3 backends
      ▼
-Central System(s) (CSMS)   ws://<backend>:9000/ocpp/<cp_id>
+Central System(s) (CSMS)   ws://<backend>:9110/ocpp/<cp_id>
 </pre>
 
 {| class="wikitable"
@@ -85,14 +85,14 @@ pip install -r requirements.txt</pre>
 python3 ocppproxy.py
 </pre>
 
-This starts the web dashboard on port '''4000''' and the OCPP proxy listener on port '''9100'''. The database is initialised automatically on first run.
+This starts the web dashboard on port '''9300''' and the OCPP proxy listener on port '''9310'''. The database is initialised automatically on first run.
 
 === Running in production (gunicorn) ===
 
 The entry module exposes the Flask <code>app</code> object and is run under gunicorn with the eventlet worker. The proxy thread starts automatically when the module loads:
 
 <pre>
-gunicorn --worker-class eventlet --workers 1 --bind 0.0.0.0:4000 app:app
+gunicorn --worker-class eventlet --workers 1 --bind 0.0.0.0:9300 app:app
 </pre>
 
 {{Note|Use a single worker (<code>--workers 1</code>). The OCPP proxy runs in a background thread inside the worker; multiple workers would start multiple conflicting listeners.}}
@@ -110,14 +110,14 @@ After=network.target
 Type=notify
 WorkingDirectory=/opt/charger/OCPPProxy
 Environment="PATH=/opt/charger/OCPPProxy/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-Environment="OCPP_UPSTREAM_URL=ws://127.0.0.1:9000/ocpp"
-Environment="PROXY_LISTEN_PORT=9100"
+Environment="PROXY_DEFAULT_BACKEND_URL=ws://127.0.0.1:9110/ocpp"
+Environment="PROXY_LISTEN_PORT=9310"
 Environment="PROXY_DATA_DIR=/opt/charger/data"
 Environment="PROXY_LOG_DIR=/var/log/charger"
 ExecStart=/opt/charger/OCPPProxy/venv/bin/gunicorn \
     --worker-class eventlet \
     --workers 1 \
-    --bind 0.0.0.0:4000 \
+    --bind 0.0.0.0:9300 \
     --timeout 120 \
     --access-logfile /var/log/charger/OCPPProxy.access.log \
     --error-logfile /var/log/charger/OCPPProxy.error.log \
@@ -169,16 +169,18 @@ If <code>/var/log/charger</code> is not writable, the application falls back to 
 {| class="wikitable"
 ! Variable !! Default !! Purpose
 |-
-| <code>PROXY_LISTEN_PORT</code> || <code>9100</code> || WebSocket port that charge points connect to
+| <code>PROXY_LISTEN_PORT</code> || <code>9310</code> || WebSocket port that charge points connect to. Seeded into the database on first boot only; after that the value stored there (editable in the dashboard) wins
+|-
+| <code>PROXY_LISTEN_HOST</code> || <code>0.0.0.0</code> || Interface the WebSocket listener binds to
 |-
 | <code>PROXY_DATA_DIR</code> || <code>/opt/charger/data</code> || Directory for the SQLite database
 |-
 | <code>PROXY_LOG_DIR</code> || <code>/var/log/charger</code> || Directory for the application log
 |-
-| <code>OCPP_UPSTREAM_URL</code> || <code>ws://127.0.0.1:9000/ocpp</code> || Default upstream CSMS URL (seeded into the database)
+| <code>PROXY_DEFAULT_BACKEND_URL</code> || <code>ws://127.0.0.1:9110/ocpp</code> || Default upstream CSMS URL. Seeded into the database on first boot only, i.e. while no backend is configured yet
 |}
 
-The web dashboard always listens on port '''4000'''.
+The web dashboard always listens on port '''9300'''.
 
 === Runtime configuration ===
 
@@ -197,7 +199,7 @@ SQLite database at <code>{PROXY_DATA_DIR}/ocppproxy.db</code> (WAL mode), create
 {| class="wikitable"
 ! Table !! Purpose
 |-
-| <code>backend_servers</code> || Upstream CSMS targets (max 3); seeded with <code>ws://127.0.0.1:9000/ocpp</code>
+| <code>backend_servers</code> || Upstream CSMS targets (max 3); seeded with <code>ws://127.0.0.1:9110/ocpp</code>
 |-
 | <code>blocked_commands</code> || Command blocking rules (<code>command</code>, <code>cp_id</code> or <code>*</code>, reason)
 |-
@@ -218,7 +220,7 @@ SQLite database at <code>{PROXY_DATA_DIR}/ocppproxy.db</code> (WAL mode), create
 
 == Using the Web Dashboard ==
 
-Open the dashboard at <code>http://&lt;proxy-host&gt;:4000/</code>. It uses Socket.IO (namespace <code>/proxy</code>) for live updates. The dashboard is organised into the following sections.
+Open the dashboard at <code>http://&lt;proxy-host&gt;:9300/</code>. It uses Socket.IO (namespace <code>/proxy</code>) for live updates. The dashboard is organised into the following sections.
 
 === Events (Live) ===
 
@@ -328,11 +330,11 @@ Each charge point message is fanned out to every enabled backend (one connection
 {| class="wikitable"
 ! Symptom !! Things to check
 |-
-| Charge points cannot connect || Confirm chargers point to <code>ws://&lt;proxy&gt;:9100/ocpp/&lt;cp_id&gt;</code>; check the listen port in Proxy Settings and firewall rules.
+| Charge points cannot connect || Confirm chargers point to <code>ws://&lt;proxy&gt;:9310/ocpp/&lt;cp_id&gt;</code>; check the listen port in Proxy Settings and firewall rules.
 |-
 | Messages not reaching the CSMS || Verify at least one backend is enabled and its URL is reachable; watch for <code>backend_offline</code> events in the dashboard.
 |-
-| Dashboard not loading || Ensure the service is running and port 4000 is open; check the gunicorn error log.
+| Dashboard not loading || Ensure the service is running and port 9300 is open; check the gunicorn error log.
 |-
 | A command is unexpectedly rejected || Review active rules in '''Command Blocking'''; look for the BLOCKED badge in the live events.
 |-
@@ -346,7 +348,7 @@ Each charge point message is fanned out to every enabled backend (one connection
 # Install Python 3 and run <code>pip install -r requirements.txt</code> in a virtual environment.
 # Create <code>/opt/charger/OCPPProxy/</code>, <code>/opt/charger/data/</code>, and <code>/var/log/charger/</code>.
 # Install and enable the systemd service (single gunicorn worker).
-# Open the dashboard at <code>http://&lt;host&gt;:4000/</code>.
-# In '''Proxy Settings''', confirm the listen port (9100) and configure the backend CSMS URL(s).
-# Point charge points at <code>ws://&lt;proxy&gt;:9100/ocpp/&lt;cp_id&gt;</code>.
+# Open the dashboard at <code>http://&lt;host&gt;:9300/</code>.
+# In '''Proxy Settings''', confirm the listen port (9310) and configure the backend CSMS URL(s).
+# Point charge points at <code>ws://&lt;proxy&gt;:9310/ocpp/&lt;cp_id&gt;</code>.
 # (Optional) Configure command blocking, boot overrides, and connector control as needed.

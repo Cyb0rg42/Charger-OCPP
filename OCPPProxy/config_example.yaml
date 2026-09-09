@@ -1,6 +1,6 @@
 {
     "name": "PROXY01",
-    "port": 4000,
+    "port": 9300,
     "logs": {
         "ocpp_log": "/var/log/charger/ocppproxy01.json",
         "access_log": "/var/log/charger/ocppproxy01-access.json",

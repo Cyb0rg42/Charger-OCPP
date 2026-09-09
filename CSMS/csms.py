@@ -62,8 +62,8 @@ from central_system import connected_cps, heartbeat_offline_cps, start_server as
 config = {
     "server_name": "Backend",
     "database_path": "/opt/charger/data/csms.db",
-    "web_port": 9001,
-    "ocpp_port": 9000,
+    "web_port": 9100,
+    "ocpp_port": 9110,
 }
 
 app = Flask(__name__)

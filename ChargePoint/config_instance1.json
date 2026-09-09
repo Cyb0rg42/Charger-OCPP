@@ -1,7 +1,8 @@
 {
     "name": "CP_001",
     "database": "/opt/charger/data/chargepoint1.db",
-    "port": 5001,
+    "port": 9400,
+    "ocpp_url": "ws://ocppproxy:9310/ocpp",
     "logs": {
         "ocpp_log": "/var/log/charger/chargepoint1-ocpp.log",
         "access_log": "/var/log/charger/chargepoint1-access.log",

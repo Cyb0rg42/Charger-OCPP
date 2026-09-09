@@ -568,7 +568,7 @@ async def _smart_schedule_monitor():
                 logging.exception("Smart schedule %s error: %s", s["id"], e)
 
 
-async def start_server(host="0.0.0.0", port=9000):
+async def start_server(host="0.0.0.0", port=9110):
     global _ws_server
     cs_db.init_db()
     logging.info("OCPP Central System listening on ws://%s:%s/ocpp", host, port)

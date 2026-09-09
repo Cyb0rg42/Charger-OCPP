@@ -59,9 +59,11 @@ import proxy_db
 
 logger = logging.getLogger("ocpp_proxy")
 
-# Defaults (overridden by DB config at runtime)
+# Listen host (overridden by DB config at runtime). The listen *port* is
+# deliberately not mirrored here: it lives in the DB — seeded from
+# PROXY_LISTEN_PORT on first boot, editable from the dashboard afterwards —
+# and is read through proxy_db.get_listen_port() wherever it is needed.
 LISTEN_HOST = os.environ.get("PROXY_LISTEN_HOST", "0.0.0.0")
-LISTEN_PORT = int(os.environ.get("PROXY_LISTEN_PORT", "9100"))
 
 # Backend reconnect backoff (seconds). The delay grows exponentially with
 # random jitter so that many charge points do not reconnect in lockstep and

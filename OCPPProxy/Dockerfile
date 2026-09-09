@@ -15,11 +15,11 @@ USER charger
 ENV PROXY_DATA_DIR=/opt/charger/data \
     PROXY_LOG_DIR=/var/log/charger \
     PROXY_LISTEN_HOST=0.0.0.0 \
-    PROXY_LISTEN_PORT=9100
+    PROXY_LISTEN_PORT=9310
 
-# Web dashboard port comes from the mounted config file's "port" field.
-# PROXY_LISTEN_PORT (env, above) is the OCPP-facing port charge points connect to.
-EXPOSE 4000 9100
+# No EXPOSE: the web dashboard port comes from the mounted config file's "port"
+# field, and the OCPP-facing port lives in the database (PROXY_LISTEN_PORT above
+# only seeds it). docker-compose.yml publishes the real ports.
 
 ENTRYPOINT ["python", "ocppproxy.py"]
 CMD ["--config", "/config/config.yaml"]

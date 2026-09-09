@@ -1257,7 +1257,7 @@ async function loadSettings() {
   // Load port
   const portResp = await fetch('/api/config/port');
   const portData = await portResp.json();
-  document.getElementById('cfg-port').value = portData.port || 9100;
+  document.getElementById('cfg-port').value = portData.port || 9310;
 
   // Load backends
   const beResp = await fetch('/api/backends');

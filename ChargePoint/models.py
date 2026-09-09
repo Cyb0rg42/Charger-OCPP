@@ -55,7 +55,7 @@ import db
 
 @dataclass
 class Config:
-    ocpp_url: str = "ws://localhost:9000/ocpp"
+    ocpp_url: str = "ws://localhost:9110/ocpp"
     max_kwh: float = 50.0
     min_kwh: float = 0.0
     station_id: str = "CP_001"

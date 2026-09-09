@@ -23,12 +23,12 @@ The ChargePoint program is a '''pure software simulator''' — it does not inter
 │            ChargePoint Simulator             │
 │                                              │
 │  Flask + Socket.IO web GUI   ── SQLite DB    │
-│  Port 5000 (default)                         │
+│  Port 9400 (default)                         │
 │                                              │
 │  OCPP 1.6 client (background asyncio thread) │
 │        │                                     │
 └────────┼─────────────────────────────────────┘
-         ▼  ws://<csms>:9000/ocpp/<station_id>
+         ▼  ws://<csms>:9110/ocpp/<station_id>
    Central System (CSMS) — or via the OCPPProxy
 </pre>
 
@@ -83,7 +83,7 @@ python3 chargepoint.py
 python3 chargepoint.py --config /opt/charger/ChargePoint/config.json
 </pre>
 
-The only command‑line argument is <code>--config</code>, the path to a JSON configuration file. When omitted, built‑in defaults are used. The web GUI starts on the configured port (default '''5000'''); open <code>http://&lt;host&gt;:5000</code>.
+The only command‑line argument is <code>--config</code>, the path to a JSON configuration file. When omitted, built‑in defaults are used. The web GUI starts on the configured port (default '''9400'''); open <code>http://&lt;host&gt;:9400</code>.
 
 === Running as a systemd service ===
 
@@ -142,7 +142,7 @@ The <code>--config</code> file is JSON. Example (<code>config_example.json</code
 {
     "name": "CP_001",
     "database": "/opt/charger/data/chargepoint1.db",
-    "port": 5000,
+    "port": 9400,
     "logs": {
         "ocpp_log": "/var/log/charger/stationocpp.log",
         "access_log": "/var/log/charger/access.log",
@@ -178,7 +178,7 @@ The following settings are managed at runtime from the '''Settings''' dialog in 
 |-
 | <code>charge_point_model</code> || <code>PythonEmu</code> || Model name sent in BootNotification
 |-
-| <code>ocpp_url</code> || <code>ws://localhost:9000/ocpp</code> || WebSocket URL of the CSMS (reconnects on change)
+| <code>ocpp_url</code> || <code>ws://localhost:9110/ocpp</code> || WebSocket URL of the CSMS (reconnects on change)
 |-
 | <code>num_connectors</code> || <code>1</code> || Number of charging connectors
 |-
@@ -189,7 +189,7 @@ The following settings are managed at runtime from the '''Settings''' dialog in 
 | <code>id_tags</code> || <code>["DEFAULT_TAG"]</code> || RFID/ID tags sent in StartTransaction
 |}
 
-{{Note|The charge point connects to the CSMS at <code>&lt;ocpp_url&gt;/&lt;station_id&gt;</code>. Point this at the CSMS directly, or at the OCPPProxy (default <code>ws://&lt;proxy&gt;:9100/ocpp</code>).}}
+{{Note|The charge point connects to the CSMS at <code>&lt;ocpp_url&gt;/&lt;station_id&gt;</code>. Point this at the CSMS directly, or at the OCPPProxy (default <code>ws://&lt;proxy&gt;:9310/ocpp</code>).}}
 
 === Database ===
 
@@ -207,7 +207,7 @@ SQLite database (default <code>/opt/charger/data/chargepoint.db</code>), created
 
 == Using the Web Interface ==
 
-Open the GUI at <code>http://&lt;host&gt;:5000</code>. State updates are pushed live over Socket.IO.
+Open the GUI at <code>http://&lt;host&gt;:9400</code>. State updates are pushed live over Socket.IO.
 
 === Station Control (<code>/</code>) ===
 
@@ -339,7 +339,7 @@ Connector inoperative         → Unavailable
 |-
 | Repeated reconnect attempts || Ensure the CSMS (or OCPPProxy) is reachable at <code>ocpp_url</code>; check the OCPP log.
 |-
-| Web UI not reachable || Verify the service is running and the configured <code>port</code> (5000) is open.
+| Web UI not reachable || Verify the service is running and the configured <code>port</code> (9400) is open.
 |-
 | Cannot start a session || Both the cable and the car must be connected first.
 |-
@@ -360,6 +360,6 @@ Run several simulators on one host by giving each its own config file with a dis
 # Create <code>/opt/charger/ChargePoint/</code>, <code>/opt/charger/data/</code>, and <code>/var/log/charger/</code>.
 # Add a config file (e.g. <code>config.json</code>) with the station <code>name</code>, <code>port</code>, and <code>database</code>.
 # Install and enable the systemd service.
-# Open the web UI at <code>http://&lt;host&gt;:5000</code>.
+# Open the web UI at <code>http://&lt;host&gt;:9400</code>.
 # In '''Settings''', set the <code>ocpp_url</code> to your CSMS (or OCPPProxy) and the number of connectors.
 # Use the Station Control page to connect the cable and car, then start a session.
