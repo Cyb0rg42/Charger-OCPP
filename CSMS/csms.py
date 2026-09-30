@@ -802,17 +802,48 @@ def api_current_session():
     # Fallback: if no meter values found for this transaction, try without filter
     if not mv:
         mv = cs_db.get_latest_meter_values(cp_id)
-    power_val = float(mv["Power.Active.Import"]["value"]) if "Power.Active.Import" in mv else 0
-    l1_val = float(mv["Current.Import.L1"]["value"]) if "Current.Import.L1" in mv else 0
-    l2_val = float(mv["Current.Import.L2"]["value"]) if "Current.Import.L2" in mv else 0
-    l3_val = float(mv["Current.Import.L3"]["value"]) if "Current.Import.L3" in mv else 0
-    # Total energy delivered = current meter reading - meter_start
+
+    def _val(key):
+        """Return the value for a measurand key normalised to W / Wh / A, or None."""
+        entry = mv.get(key)
+        if not entry:
+            return None
+        try:
+            value = float(entry["value"])
+        except (TypeError, ValueError):
+            return None
+        # Charge points may report in kW / kWh; normalise to W / Wh.
+        if (entry.get("unit") or "").lower() in ("kw", "kwh"):
+            value *= 1000
+        return value
+
+    def _phase(measurand, phase):
+        # Accept both "L1" and "L1-N" style phase names
+        for key in (f"{measurand}.{phase}", f"{measurand}.{phase}-N"):
+            v = _val(key)
+            if v is not None:
+                return v
+        return None
+
+    power_val = _val("Power.Active.Import")
+    if power_val is None:
+        # Some charge points only report power per phase
+        phase_powers = [_phase("Power.Active.Import", p) for p in ("L1", "L2", "L3")]
+        power_val = sum(p for p in phase_powers if p is not None)
+    l1_val = _phase("Current.Import", "L1")
+    if l1_val is None:
+        # Single-phase / aggregate current without a phase attribute
+        l1_val = _val("Current.Import")
+    l2_val = _phase("Current.Import", "L2")
+    l3_val = _phase("Current.Import", "L3")
+    # Total energy delivered = current meter reading - meter_start (both in Wh)
     energy_val = 0
-    if "Energy.Active.Import.Register" in mv:
-        current_meter = float(mv["Energy.Active.Import.Register"]["value"])
+    current_meter = _val("Energy.Active.Import.Register")
+    if current_meter is not None:
         meter_start = txn.get("meter_start") or 0
         energy_val = max(0, current_meter - meter_start)
-    return jsonify({"active": True, "power": power_val, "l1": l1_val, "l2": l2_val, "l3": l3_val, "energy": energy_val})
+    return jsonify({"active": True, "power": power_val, "l1": l1_val or 0, "l2": l2_val or 0,
+                    "l3": l3_val or 0, "energy": energy_val})
 
 
 @app.route("/api/current-session/debug")

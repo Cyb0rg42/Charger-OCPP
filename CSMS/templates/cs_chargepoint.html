@@ -81,8 +81,8 @@
       <div class="col">
         <div class="card border-info h-100">
           <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
-            <div class="stat-label text-info mb-1" style="font-size: 13px;">Watt Delivered</div>
-            <div class="stat-value text-info" id="session-energy">0 Watt</div>
+            <div class="stat-label text-info mb-1" style="font-size: 13px;">Energy Delivered</div>
+            <div class="stat-value text-info" id="session-energy">0 Wh</div>
           </div>
         </div>
       </div>
@@ -693,10 +693,14 @@ function loadLiveStats() {
 
 function loadCurrentSession() {
   $.getJSON("/api/current-session?cp_id=" + encodeURIComponent(cpId), function(data) {
-    var energy = parseFloat(data.energy);
-    $("#session-energy").text(Math.round(energy).toLocaleString('de-DE') + " Watt");
-    var power = parseFloat(data.power);
-    $("#session-power").text(Math.round(power).toLocaleString('de-DE') + " Wh");
+    var energy = parseFloat(data.energy) || 0;
+    if (energy >= 1000) {
+      $("#session-energy").text((energy / 1000).toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " kWh");
+    } else {
+      $("#session-energy").text(Math.round(energy).toLocaleString('de-DE') + " Wh");
+    }
+    var power = parseFloat(data.power) || 0;
+    $("#session-power").text(Math.round(power).toLocaleString('de-DE') + " W");
     $("#session-l1").text(parseFloat(data.l1).toFixed(1) + " A");
     $("#session-l2").text(parseFloat(data.l2).toFixed(1) + " A");
     $("#session-l3").text(parseFloat(data.l3).toFixed(1) + " A");
@@ -736,7 +740,7 @@ $("#smart-schedule-per-page").change(function() {
 });
 setInterval(loadStatus, 5000);
 setInterval(loadLiveStats, 5000);
-setInterval(loadCurrentSession, 15000);
+setInterval(loadCurrentSession, 5000);
 setInterval(loadTxns, 5000);
 setInterval(loadEvents, 3000);
 setInterval(loadSmartSchedules, 10000);
